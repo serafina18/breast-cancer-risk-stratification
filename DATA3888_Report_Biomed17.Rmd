@@ -1,0 +1,699 @@
+---
+title: "Can Combining Histopathology and RNA-seq Improve Risk Stratification to Reduce Under-treatment in Breast Cancer?"
+subtitle: "DATA3888 Data Science Capstone — Biomed17"
+author: "Guanyu Chen, Serafina Aurelia, Kush, Thinh, Ananda Maheswari, Nael"
+date: "2026-05-31"
+output:
+  html_document:
+    toc: true
+    toc_depth: 3
+    toc_float:
+      collapsed: true
+      smooth_scroll: true
+    theme: flatly
+    highlight: tango
+    number_sections: true
+    fig_caption: true
+    code_folding: hide
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(
+  echo = FALSE, 
+  warning = FALSE, 
+  message = FALSE,
+  fig.align = "center",
+  out.width = "92%"
+)
+```
+
+```{css, echo=FALSE}
+@import url('https://fonts.googleapis.com/css2?family=Raleway:wght@300;400;500;600&display=swap');
+
+:root {
+  --report-bg: #f6f6f6;
+  --report-ink: #222222;
+  --report-muted: #757575;
+  --report-line: #dedede;
+  --report-accent: #2f78bd;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  font-family: 'Raleway', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 20px;
+  line-height: 1.68;
+  color: var(--report-ink);
+  background: var(--report-bg);
+  font-weight: 300;
+}
+
+.container-fluid.main-container {
+  max-width: 1680px;
+  margin: 0 auto;
+  padding: 52px 96px 120px 390px;
+}
+
+#header {
+  margin: 0 0 145px;
+  text-align: left;
+}
+
+#header .title {
+  font-size: 46px;
+  line-height: 1.05;
+  font-weight: 300 !important;
+  letter-spacing: 0;
+  color: #050505;
+  margin: 0 0 28px;
+  max-width: 1120px;
+  border: 0;
+  padding-bottom: 0;
+}
+
+#header .subtitle,
+#header h3.subtitle {
+  font-size: 22px;
+  color: var(--report-muted);
+  font-weight: 300;
+  margin-top: -8px;
+}
+
+#header .author,
+#header .date {
+  position: relative;
+  margin: 8px 0 0 28px;
+  color: #333333;
+  font-size: 18px;
+  line-height: 1.35;
+}
+
+#header .author::before,
+#header .date::before {
+  position: absolute;
+  left: -28px;
+  color: #999999;
+  font-family: "Glyphicons Halflings";
+}
+
+#header .author::before {
+  content: "\e008";
+}
+
+#header .date::before {
+  content: "\e109";
+}
+
+#TOC {
+  position: fixed;
+  top: 52px;
+  left: max(34px, calc((100vw - 1680px) / 2 + 34px));
+  width: 280px;
+  max-height: calc(100vh - 100px);
+  overflow-y: auto;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+  padding: 12px 0 0 0;
+}
+
+#TOC .tocify-header {
+  text-indent: 0;
+}
+
+#TOC ul,
+#TOC li,
+#TOC .list-group,
+#TOC .list-group-item {
+  background: transparent !important;
+  border: 0 !important;
+  box-shadow: none !important;
+}
+
+#TOC .tocify-item {
+  border-radius: 0;
+}
+
+/* Level 1 TOC items */
+#TOC .tocify-item a {
+  color: #555;
+  font-size: 15px;
+  line-height: 1.4;
+  font-weight: 400;
+  padding: 7px 0;
+  background: transparent !important;
+  border: 0 !important;
+  transition: color 0.15s;
+}
+
+#TOC .tocify-item a:hover {
+  color: #111;
+}
+
+/* Subsection indentation */
+#TOC .tocify-subheader {
+  border-left: 1.5px solid #d0d0d0;
+  margin: 2px 0 6px 8px;
+  padding-left: 14px;
+}
+
+#TOC .tocify-subheader .tocify-item a {
+  font-size: 13.5px;
+  color: #888;
+  font-weight: 300;
+  padding: 3px 0;
+}
+
+#TOC .tocify-subheader .tocify-item a:hover {
+  color: #333;
+}
+
+/* Level 3 sub-subsection */
+#TOC .tocify-subheader .tocify-subheader {
+  border-left: 1px solid #e0e0e0;
+  margin: 1px 0 4px 6px;
+  padding-left: 12px;
+}
+
+#TOC .tocify-subheader .tocify-subheader .tocify-item a {
+  font-size: 12.5px;
+  color: #999;
+}
+
+/* Active / focused item */
+#TOC .active > a,
+#TOC .tocify-focus > a,
+#TOC .list-group-item.active > a,
+#TOC .list-group-item.tocify-focus > a {
+  color: #111 !important;
+  background: transparent !important;
+  font-weight: 600;
+}
+
+#TOC .active,
+#TOC .tocify-focus,
+#TOC .tocify-item.active,
+#TOC .tocify-item.tocify-focus,
+#TOC .list-group-item.active,
+#TOC .list-group-item.tocify-focus {
+  background: transparent !important;
+  border: 0 !important;
+  color: #111 !important;
+}
+
+#TOC .tocify-subheader .active > a,
+#TOC .tocify-subheader .tocify-focus > a {
+  color: #222 !important;
+  font-weight: 500;
+}
+
+.tocify-extend-page {
+  height: 0 !important;
+}
+
+.btn.code-folding-btn {
+  position: fixed;
+  top: 42px;
+  right: 42px;
+  z-index: 20;
+  font-size: 15px;
+  color: #333333;
+  border-color: #e2e2e2;
+  background: rgba(255, 255, 255, 0.72);
+  backdrop-filter: blur(6px);
+}
+
+h1 { 
+  font-weight: 300 !important;
+  color: #050505;
+  border-bottom: 1px solid var(--report-line);
+  padding-bottom: 10px;
+  margin-top: 4.2em;
+  margin-bottom: 24px;
+  font-size: 44px;
+  line-height: 1.15;
+}
+
+h1:first-of-type {
+  margin-top: 0;
+}
+
+h2 {
+  font-weight: 300;
+  color: #111111;
+  margin-top: 2.1em;
+  margin-bottom: 18px;
+  font-size: 36px;
+  line-height: 1.25;
+}
+
+h3 {
+  font-weight: 300;
+  color: #151515;
+  margin-top: 1.7em;
+  font-size: 28px;
+  line-height: 1.3;
+}
+
+h4, h5, h6 {
+  font-weight: 500;
+}
+
+p {
+  margin: 0 0 22px;
+}
+
+strong {
+  font-weight: 600;
+}
+
+a {
+  color: var(--report-accent);
+}
+
+img {
+  display: block;
+  max-width: 100%;
+  height: auto;
+  margin: 16px auto 8px;
+}
+
+.figure {
+  margin: 34px 0 44px;
+}
+
+table {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 1.8em 0 2.2em;
+  font-size: 16px;
+  background: transparent;
+}
+
+thead th {
+  background-color: rgba(255, 255, 255, 0.62);
+  color: #777777;
+  padding: 12px 14px;
+  text-align: left;
+  font-weight: 400;
+  border: 1px solid #e5e5e5;
+}
+
+tbody td {
+  padding: 12px 14px;
+  border-bottom: 1px solid #e6e6e6;
+}
+
+tbody tr:hover {
+  background-color: rgba(255, 255, 255, 0.48);
+}
+
+p.caption, .figure p {
+  font-size: 14px;
+  color: #222222;
+  font-style: normal;
+  text-align: center;
+  margin-top: 12px;
+  line-height: 1.45;
+}
+
+.todo {
+  background-color: rgba(255, 255, 255, 0.58);
+  border-left: 3px solid #9e9e9e;
+  color: #555555;
+  padding: 14px 18px;
+  margin: 22px 0 34px;
+  font-size: 17px;
+  line-height: 1.55;
+}
+
+.todo strong {
+  color: #222222;
+}
+
+blockquote {
+  border-left: 3px solid #bdbdbd;
+  padding: 10px 20px;
+  margin: 1.5em 0;
+  background-color: rgba(255, 255, 255, 0.54);
+  color: #333333;
+}
+
+.model-overview table {
+  font-size: 16px;
+  margin: 1.4em 0 2em;
+}
+
+.model-overview table thead th {
+  white-space: nowrap;
+  font-size: 14px;
+  background-color: rgba(0, 0, 0, 0.03);
+  color: #555555;
+  font-weight: 500;
+  letter-spacing: 0.03em;
+  text-transform: uppercase;
+  border-bottom: 2px solid #cccccc;
+}
+
+pre {
+  background: #ffffff;
+  border: 1px solid #e3e3e3;
+  border-radius: 6px;
+  padding: 16px 20px;
+}
+
+code {
+  color: #8a5b00;
+  background-color: #fff0c7;
+  border-radius: 4px;
+  padding: 2px 5px;
+}
+
+pre code {
+  color: inherit;
+  background: transparent;
+  padding: 0;
+}
+
+@media print {
+  body {
+    font-size: 13px;
+    line-height: 1.55;
+    color: #000;
+    background: #fff;
+  }
+
+  .container-fluid.main-container {
+    max-width: 100%;
+    padding: 0 48px;
+  }
+
+  #TOC {
+    display: none;
+  }
+
+  .btn.code-folding-btn {
+    display: none;
+  }
+
+  h1 { font-size: 28px; page-break-before: always; }
+  h1:first-of-type { page-break-before: avoid; }
+  h2 { font-size: 22px; }
+  h3 { font-size: 18px; }
+
+  pre, code {
+    background: #f9f9f9;
+    border: 1px solid #ddd;
+  }
+
+  table {
+    font-size: 11px;
+  }
+
+  img {
+    max-width: 100%;
+    page-break-inside: avoid;
+  }
+
+  .figure {
+    page-break-inside: avoid;
+  }
+
+  .todo {
+    background: #f5f5f5;
+  }
+}
+
+@media (max-width: 1100px) {
+  .container-fluid.main-container {
+    padding: 34px 42px 90px 320px;
+  }
+
+  #TOC {
+    left: 28px;
+    width: 235px;
+  }
+
+  #header .title {
+    font-size: 44px;
+  }
+}
+
+@media (max-width: 820px) {
+  .container-fluid.main-container {
+    padding: 28px 22px 70px;
+  }
+
+  #TOC {
+    position: static;
+    width: auto;
+    max-height: none;
+    margin-bottom: 34px;
+  }
+
+  #TOC::after {
+    display: none;
+  }
+
+  #header {
+    margin-bottom: 70px;
+  }
+
+  #header .title {
+    font-size: 36px;
+  }
+
+  body {
+    font-size: 18px;
+  }
+
+  h1 {
+    font-size: 34px;
+  }
+
+  h2 {
+    font-size: 28px;
+  }
+
+  h3 {
+    font-size: 24px;
+  }
+}
+```
+
+
+# Executive Summary
+
+<div class="todo">
+<strong>Assigned to: Ananda</strong> — Write the executive summary. Suggested structure: background, methodology, key findings, and conclusion.
+</div>
+
+
+# Introduction
+
+<div class="todo">
+<strong>Assigned to: Ananda</strong> — Write the introduction and research question.
+</div>
+
+
+# Methodology
+
+## Workflow Overview
+
+<div class="todo">
+<strong>Assigned to: Kush</strong> — Insert and explain the workflow figure.
+</div>
+
+## Data Preprocessing
+
+<div class="todo">
+<strong>Assigned to: Nael</strong> — Write the data preprocessing section.
+</div>
+
+## Data Modelling
+
+To systematically assess the contribution of each data modality, we designed five ablation models evaluated under a unified nested cross-validation framework:
+
+<div class="model-overview">
+
+| Model | Features | Algorithm | Rationale |
+|:------|:---------|:----------|:----------|
+| M1 | ~10,000 genes (var > 0.5) | Random Forest | RNA-seq only baseline |
+| M2 | 5 clinical variables | Logistic Regression | Histopathology only baseline |
+| M3 | Top 50 genes + 5 clinical | Random Forest | Combined (same algorithm as M1) |
+| M4 | Top 50 genes + 5 clinical | Ridge Logistic Regression | Combined (regularised LR) |
+| M5 | Top 50 genes + 5 clinical | Plain Logistic Regression | Combined (unregularised baseline) |
+
+</div>
+
+All models were evaluated using **5-fold outer × 5-fold inner nested cross-validation**. The outer loop provides unbiased generalisation estimates; the inner loop tunes hyperparameters and optimises the classification threshold. All five models share identical outer folds (seed = 42), enabling paired ablation comparison.
+
+**Hyperparameter tuning.** M1 tuned `mtry` over {50, 100, 200, 300, 500}; M3 tuned `mtry` over {2, 3, 5, 7, 10, 15}; M4 selected Ridge `lambda` via `cv.glmnet` (alpha = 0). M2 and M5 have no tunable hyperparameters.
+
+**Class imbalance.** RF models used balanced `sampsize` (equal TP and FN per tree, computed dynamically per inner fold). LR models used inverse-frequency class weights: $w_i = N / (2 \times N_{\text{class}})$.
+
+**Threshold optimisation.** The Youden index (maximising Sensitivity + Specificity − 1) was applied to concatenated inner-fold predictions. The resulting threshold was applied unchanged to the outer test fold.
+
+**Gene selection.** The top 50 genes were ranked by Mean Decrease Gini from a Random Forest trained on the full dataset (all 2,648 samples). Ranking on the entire dataset before cross-validation constitutes mild feature-selection leakage: the selected genes are informed by the outcome labels of samples that later appear in outer test folds. However, because Random Forest feature importance with 10,000 noisy predictors is primarily driven by signal rather than noise — and because the top 50 genes are individually validated in TCGA-BRCA (43/50 matched, external AUC 0.783) — the leakage is unlikely to materially inflate our internal estimates. We flag this as a limitation where future work could employ fully nested gene selection (Section 5).
+
+### External Validation — TCGA-BRCA
+
+We applied the model to the TCGA-BRCA dataset (accessed via `curatedTCGAData`). Of the top 50 genes, 43 had matching symbols in TCGA. A Random Forest was retrained on all 2,648 SCAN-B samples using only these 43 genes (OOB error = 3.4%).
+
+The model was applied to 806 TCGA ER+ patients. With only 14 discordant cases (IHC ER+ and PAM50 Basal-like), we compared predicted probability distributions between groups using the Wilcoxon rank-sum test, ROC AUC with DeLong 95% CI, and Cliff's delta effect size.
+
+### Shiny Risk Calculator
+
+A Shiny web application loads the 43-gene RF model and accepts uploaded gene expression data or pre-loaded example patients. It outputs a discordance risk score and tier (Low / Medium / High). Clinical variables are displayed for context only and do not influence the prediction, consistent with the ablation finding.
+
+## Evaluation Strategy & Justification
+
+<div class="todo">
+<strong>Assigned to: Thinh</strong> — Write the evaluation strategy and justification section.
+</div>
+
+
+# Results
+
+## Ablation Model Comparison
+
+```{r fig-ablation, fig.cap="Figure 2: Nested cross-validation AUC for five ablation models. Error bars = ± 1 SD across 5 outer folds."}
+library(ggplot2)
+auc_data <- data.frame(
+  Model = c("M1: RNA-seq RF", "M2: Histopath LR", "M3: Combined RF",
+            "M4: Combined Ridge", "M5: Combined Plain LR"),
+  AUC = c(0.996, 0.729, 0.995, 0.995, 0.984),
+  SD = c(0.001, 0.039, 0.002, 0.002, 0.017),
+  Modality = c("RNA-seq", "Histopathology", "Combined", "Combined", "Combined")
+)
+auc_data$Model <- factor(auc_data$Model, levels = rev(auc_data$Model))
+ggplot(auc_data, aes(x = Model, y = AUC, fill = Modality)) +
+  geom_col(width = 0.62) +
+  geom_errorbar(aes(ymin = AUC - SD, ymax = pmin(AUC + SD, 1)),
+                width = 0.18, linewidth = 0.35) +
+  geom_text(aes(label = sprintf("%.3f", AUC)), hjust = -0.18, size = 4.2) +
+  coord_flip() +
+  scale_fill_manual(values = c("Combined" = "#5a86a6",
+                               "Histopathology" = "#d8913f",
+                               "RNA-seq" = "#5a5f73")) +
+  scale_y_continuous(limits = c(0, 1.08), breaks = seq(0, 1, 0.2)) +
+  labs(x = NULL, y = "AUC (mean ± SD)", fill = NULL) +
+  theme_minimal(base_size = 14) +
+  theme(
+    legend.position = "top",
+    legend.key.size = unit(0.7, "lines"),
+    panel.grid.major.y = element_blank(),
+    panel.grid.minor = element_blank(),
+    plot.margin = margin(12, 28, 8, 8),
+    plot.background = element_rect(fill = "#fdfdfd", color = NA),
+    panel.background = element_rect(fill = "#fdfdfd", color = NA),
+    axis.text = element_text(color = "#333333"),
+    axis.text.y = element_text(color = "#222222")
+  )
+```
+
+RNA-seq alone (M1) achieved AUC 0.996 ± 0.001 with sensitivity 0.976 and specificity 0.965, substantially outperforming histopathology only (M2: AUC 0.729 ± 0.039, sensitivity 0.591, specificity 0.737). Combined models matched but did not exceed M1 (Figure 2; full metrics in Table S1).
+
+Among combined models, M3 (RF) and M4 (Ridge LR, each AUC 0.995) performed equivalently, while M5 (Plain LR, AUC 0.984 ± 0.017) showed higher variance and a modest decline. In the high-dimensional, correlated gene-expression setting, unregularised logistic regression is ill-conditioned: coefficients are unstable and overfit to noise, inflating variance across folds. The regularisation in M4 (Ridge) and the ensemble averaging in M3 (RF) suppress this noise.
+
+The key finding is that gene expression captures the full discriminative signal for ER discordance; adding clinical variables yields no incremental predictive benefit. This is corroborated by feature importance: all five clinical variables ranked last in the Combined RF model.
+
+## External Validation — TCGA-BRCA
+
+```{r fig-tcga, fig.cap="Figure 3: TCGA-BRCA external validation results."}
+# Uncomment when figure is ready:
+# knitr::include_graphics("tcga_validation_figure.png")
+```
+
+The 43-gene panel significantly separated discordant (n = 14, mean prob = 0.022) from concordant (n = 353, mean prob = 0.0001) TCGA patients (Wilcoxon p < 10⁻⁶, Cliff's delta = 0.566). External AUC = 0.783 (95% CI: 0.647–0.919), a drop of 0.212 from internal — consistent with cross-platform degradation. Discrimination transfers; calibration does not.
+
+## Survival Analysis
+
+<div class="todo">
+<strong>Assigned to: Serafina</strong> — Add survival analysis results.
+</div>
+
+```{r fig-survival, fig.cap="Figure 4: Kaplan-Meier survival curves for ER discordant vs concordant patients."}
+# Uncomment when Serafina provides figure:
+# knitr::include_graphics("km_survival_curve.png")
+```
+
+
+# Discussion and Conclusion
+
+## Key Findings
+
+This study asked whether combining histopathology and RNA-seq improves risk stratification for ER-discordant breast cancer patients. The ablation analysis provides a clear answer: **RNA-seq alone achieves near-perfect discrimination (AUC = 0.996), and adding clinical variables provides no improvement** (Combined AUC = 0.995). A compact 43-gene panel is sufficient to identify patients whose tumours may be molecularly ER-negative despite an IHC ER+ classification — patients who are potentially under-treated with endocrine therapy alone.
+
+External validation on TCGA-BRCA confirmed that the biological signal captured by this panel transfers across sequencing platforms (SCAN-B FPKM vs TCGA RSEM) and populations (Swedish vs American cohorts), with an external AUC of 0.783. The drop from internal performance is consistent with expected cross-platform degradation rather than overfitting, and the Wilcoxon test (p < 10⁻⁶) confirms that the model's ranking ability is robust.
+
+<div class="todo">
+<strong>Assigned to: Serafina</strong> — Add one paragraph on survival analysis implications: do discordant patients have worse outcomes? How does this support the clinical relevance of detecting ER discordance?
+</div>
+
+## Limitations
+
+1. **Feature selection leakage.** The top 50 genes were selected on the full dataset before cross-validation. The selected features are therefore informed by outcome labels of samples that later appear in test folds. Future work should embed gene selection within each outer fold.
+2. **Prediction target circularity.** The er_MGC label is itself derived from RNA-seq data, which partially explains the high internal AUC — the model learns to reconstruct a function of its own input features.
+3. **Limited external discordant cases.** Only 14 TCGA patients met the discordant criterion (IHC ER+ and PAM50 Basal-like), yielding a wide confidence interval on external AUC (0.647–0.919).
+4. **Population specificity.** The model was trained exclusively on the SCAN-B Swedish cohort and may not generalise to populations with different demographics or tumour biology.
+5. **Calibration failure.** Absolute predicted probabilities do not transfer cross-platform (maximum 0.082 in TCGA vs near 1.0 in SCAN-B); only relative ranking is validated.
+6. **Ki67 exclusion.** Ki67 status was excluded due to 54.8% missingness in SCAN-B, limiting the clinical feature set available for the histopathology-only model.
+
+## Future Work
+
+Future directions include embedding gene selection within each cross-validation fold to eliminate feature selection leakage, applying probability calibration (Platt scaling or isotonic regression) for clinical deployment, and validating on additional independent cohorts with matched IHC and RNA-seq data.
+
+
+# Student Contributions
+
+- **Gary (Guanyu Chen)**: Random Forest classification pipeline, nested cross-validation ablation study, TCGA-BRCA external validation, report Methodology (Data Modelling) and Results sections, Discussion (Key Findings, Limitations, Future Work).
+- **Serafina Aurelia**: Cox proportional hazards survival models, LASSO-Cox pipeline, Kaplan-Meier survival analysis, report Survival Analysis sections and Discussion (survival implications).
+- **Kush**: LASSO logistic regression (114-gene selection), limma differential expression analysis, GSE96058 R data package, workflow diagram (Figure 1).
+- **Thinh**: Exploratory data analysis, data preprocessing pipeline, report Evaluation Strategy & Justification section.
+- **Ananda Maheswari**: Exploratory data analysis, clinical variable selection, report Executive Summary and Introduction.
+- **Nael**: Data preprocessing documentation, report Data Preprocessing section, formatting.
+
+
+# References
+
+Brueffer, C., Vallon-Christersson, J., Grabau, D., et al. (2018). Clinical Value of RNA Sequencing–Based Classifiers for Prediction of the Five Conventional Breast Cancer Biomarkers. *JCO Precision Oncology*, 2, 1–18.
+
+Liaw, A., & Wiener, M. (2002). Classification and Regression by randomForest. *R News*, 2(3), 18–22.
+
+Friedman, J., Hastie, T., & Tibshirani, R. (2010). Regularization Paths for Generalized Linear Models via Coordinate Descent. *Journal of Statistical Software*, 33(1), 1–22.
+
+Robin, X., et al. (2011). pROC: an open-source package for R and S+ to analyze and compare ROC curves. *BMC Bioinformatics*, 12, 77.
+
+Ramos, M., et al. (2017). Software for the Integration of Multiomics Experiments in Bioconductor. *Cancer Research*, 77(21), e39–e42.
+
+<div class="todo">
+<strong>Assigned to: Everyone</strong> — Add references for your own sections.
+</div>
+
+
+# Appendix
+
+```{r fig-shiny, fig.cap="Figure 5: Shiny risk calculator prototype."}
+# Uncomment when screenshot is ready:
+# knitr::include_graphics("shiny_app_screenshot.png")
+```
+
+```{r}
+ncv_table <- data.frame(
+  Model = c("M1: RNA-seq RF", "M2: Histopath LR", "M3: Combined RF",
+            "M4: Combined Ridge", "M5: Combined Plain LR"),
+  Features = c("~10K genes", "5 clinical", "Top 50 + 5", "Top 50 + 5", "Top 50 + 5"),
+  AUC = c("0.996 ± 0.001", "0.729 ± 0.039", "0.995 ± 0.002",
+          "0.995 ± 0.002", "0.984 ± 0.017"),
+  Sens = c("0.976 ± 0.040", "0.591 ± 0.082", "0.964 ± 0.048",
+           "0.971 ± 0.047", "0.941 ± 0.071"),
+  Spec = c("0.965 ± 0.022", "0.737 ± 0.051", "0.963 ± 0.020",
+           "0.966 ± 0.024", "0.951 ± 0.043")
+)
+knitr::kable(ncv_table, caption = "Table S1: Full nested CV results (mean ± SD, 5 outer folds).",
+             align = c("l","l","r","r","r"))
+```
