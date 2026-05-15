@@ -653,7 +653,7 @@ Future directions include embedding gene selection within each cross-validation 
 - **Gary (Guanyu Chen)**: Random Forest classification pipeline, nested cross-validation ablation study, TCGA-BRCA external validation, report Methodology (Data Modelling) and Results sections, Discussion (Key Findings, Limitations, Future Work).
 - **Serafina Aurelia**: Cox proportional hazards survival models, LASSO-Cox pipeline, Kaplan-Meier survival analysis, report Survival Analysis sections and Discussion (survival implications).
 - **Kush**: LASSO logistic regression (114-gene selection), limma differential expression analysis, GSE96058 R data package, workflow diagram (Figure 1).
-- **Thinh**: Exploratory data analysis, data preprocessing pipeline, report Evaluation Strategy & Justification section.
+- **Thinh**: SVM-RBF (svmRadial, e1071) classification pipeline, exploratory data analysis, data preprocessing pipeline, report Evaluation Strategy & Justification section.
 - **Ananda Maheswari**: Exploratory data analysis, clinical variable selection, report Executive Summary and Introduction.
 - **Nael**: Data preprocessing documentation, report Data Preprocessing section, formatting.
 
