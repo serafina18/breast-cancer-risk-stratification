@@ -484,50 +484,45 @@ pre code {
 }
 ```
 
-
 # Executive Summary
 
-<div class="todo">
+::: todo
 <strong>Assigned to: Ananda</strong> — Write the executive summary. Suggested structure: background, methodology, key findings, and conclusion.
-</div>
-
+:::
 
 # Introduction
 
-<div class="todo">
+::: todo
 <strong>Assigned to: Ananda</strong> — Write the introduction and research question.
-</div>
-
+:::
 
 # Methodology
 
 ## Workflow Overview
 
-<div class="todo">
+::: todo
 <strong>Assigned to: Kush</strong> — Insert and explain the workflow figure.
-</div>
+:::
 
 ## Data Preprocessing
 
-<div class="todo">
+::: todo
 <strong>Assigned to: Nael</strong> — Write the data preprocessing section.
-</div>
+:::
 
 ## Data Modelling
 
 To systematically assess the contribution of each data modality, we designed five ablation models evaluated under a unified nested cross-validation framework:
 
-<div class="model-overview">
-
+::: model-overview
 | Model | Features | Algorithm | Rationale |
-|:------|:---------|:----------|:----------|
-| M1 | ~10,000 genes (var > 0.5) | Random Forest | RNA-seq only baseline |
+|:---|:---|:---|:---|
+| M1 | \~10,000 genes (var \> 0.5) | Random Forest | RNA-seq only baseline |
 | M2 | 5 clinical variables | Logistic Regression | Histopathology only baseline |
 | M3 | Top 50 genes + 5 clinical | Random Forest | Combined (same algorithm as M1) |
 | M4 | Top 50 genes + 5 clinical | Ridge Logistic Regression | Combined (regularised LR) |
 | M5 | Top 50 genes + 5 clinical | Plain Logistic Regression | Combined (unregularised baseline) |
-
-</div>
+:::
 
 All models were evaluated using **5-fold outer × 5-fold inner nested cross-validation**. The outer loop provides unbiased generalisation estimates; the inner loop tunes hyperparameters and optimises the classification threshold. All five models share identical outer folds (seed = 42), enabling paired ablation comparison.
 
@@ -551,10 +546,9 @@ A Shiny web application loads the 43-gene RF model and accepts uploaded gene exp
 
 ## Evaluation Strategy & Justification
 
-<div class="todo">
+::: todo
 <strong>Assigned to: Thinh</strong> — Write the evaluation strategy and justification section.
-</div>
-
+:::
 
 # Results
 
@@ -608,19 +602,18 @@ The key finding is that gene expression captures the full discriminative signal 
 # knitr::include_graphics("tcga_validation_figure.png")
 ```
 
-The 43-gene panel significantly separated discordant (n = 14, mean prob = 0.022) from concordant (n = 353, mean prob = 0.0001) TCGA patients (Wilcoxon p < 10⁻⁶, Cliff's delta = 0.566). External AUC = 0.783 (95% CI: 0.647–0.919), a drop of 0.212 from internal — consistent with cross-platform degradation. Discrimination transfers; calibration does not.
+The 43-gene panel significantly separated discordant (n = 14, mean prob = 0.022) from concordant (n = 353, mean prob = 0.0001) TCGA patients (Wilcoxon p \< 10⁻⁶, Cliff's delta = 0.566). External AUC = 0.783 (95% CI: 0.647–0.919), a drop of 0.212 from internal — consistent with cross-platform degradation. Discrimination transfers; calibration does not.
 
 ## Survival Analysis
 
-<div class="todo">
+::: todo
 <strong>Assigned to: Serafina</strong> — Add survival analysis results.
-</div>
+:::
 
 ```{r fig-survival, fig.cap="Figure 4: Kaplan-Meier survival curves for ER discordant vs concordant patients."}
 # Uncomment when Serafina provides figure:
 # knitr::include_graphics("km_survival_curve.png")
 ```
-
 
 # Discussion and Conclusion
 
@@ -628,35 +621,33 @@ The 43-gene panel significantly separated discordant (n = 14, mean prob = 0.022)
 
 This study asked whether combining histopathology and RNA-seq improves risk stratification for ER-discordant breast cancer patients. The ablation analysis provides a clear answer: **RNA-seq alone achieves near-perfect discrimination (AUC = 0.996), and adding clinical variables provides no improvement** (Combined AUC = 0.995). A compact 43-gene panel is sufficient to identify patients whose tumours may be molecularly ER-negative despite an IHC ER+ classification — patients who are potentially under-treated with endocrine therapy alone.
 
-External validation on TCGA-BRCA confirmed that the biological signal captured by this panel transfers across sequencing platforms (SCAN-B FPKM vs TCGA RSEM) and populations (Swedish vs American cohorts), with an external AUC of 0.783. The drop from internal performance is consistent with expected cross-platform degradation rather than overfitting, and the Wilcoxon test (p < 10⁻⁶) confirms that the model's ranking ability is robust.
+External validation on TCGA-BRCA confirmed that the biological signal captured by this panel transfers across sequencing platforms (SCAN-B FPKM vs TCGA RSEM) and populations (Swedish vs American cohorts), with an external AUC of 0.783. The drop from internal performance is consistent with expected cross-platform degradation rather than overfitting, and the Wilcoxon test (p \< 10⁻⁶) confirms that the model's ranking ability is robust.
 
-<div class="todo">
+::: todo
 <strong>Assigned to: Serafina</strong> — Add one paragraph on survival analysis implications: do discordant patients have worse outcomes? How does this support the clinical relevance of detecting ER discordance?
-</div>
+:::
 
 ## Limitations
 
-1. **Feature selection leakage.** The top 50 genes were selected on the full dataset before cross-validation. The selected features are therefore informed by outcome labels of samples that later appear in test folds. Future work should embed gene selection within each outer fold.
-2. **Prediction target circularity.** The er_MGC label is itself derived from RNA-seq data, which partially explains the high internal AUC — the model learns to reconstruct a function of its own input features.
-3. **Limited external discordant cases.** Only 14 TCGA patients met the discordant criterion (IHC ER+ and PAM50 Basal-like), yielding a wide confidence interval on external AUC (0.647–0.919).
-4. **Population specificity.** The model was trained exclusively on the SCAN-B Swedish cohort and may not generalise to populations with different demographics or tumour biology.
-5. **Calibration failure.** Absolute predicted probabilities do not transfer cross-platform (maximum 0.082 in TCGA vs near 1.0 in SCAN-B); only relative ranking is validated.
-6. **Ki67 exclusion.** Ki67 status was excluded due to 54.8% missingness in SCAN-B, limiting the clinical feature set available for the histopathology-only model.
+1.  **Feature selection leakage.** The top 50 genes were selected on the full dataset before cross-validation. The selected features are therefore informed by outcome labels of samples that later appear in test folds. Future work should embed gene selection within each outer fold.
+2.  **Prediction target circularity.** The er_MGC label is itself derived from RNA-seq data, which partially explains the high internal AUC — the model learns to reconstruct a function of its own input features.
+3.  **Limited external discordant cases.** Only 14 TCGA patients met the discordant criterion (IHC ER+ and PAM50 Basal-like), yielding a wide confidence interval on external AUC (0.647–0.919).
+4.  **Population specificity.** The model was trained exclusively on the SCAN-B Swedish cohort and may not generalise to populations with different demographics or tumour biology.
+5.  **Calibration failure.** Absolute predicted probabilities do not transfer cross-platform (maximum 0.082 in TCGA vs near 1.0 in SCAN-B); only relative ranking is validated.
+6.  **Ki67 exclusion.** Ki67 status was excluded due to 54.8% missingness in SCAN-B, limiting the clinical feature set available for the histopathology-only model.
 
 ## Future Work
 
 Future directions include embedding gene selection within each cross-validation fold to eliminate feature selection leakage, applying probability calibration (Platt scaling or isotonic regression) for clinical deployment, and validating on additional independent cohorts with matched IHC and RNA-seq data.
 
-
 # Student Contributions
 
-- **Gary (Guanyu Chen)**: Random Forest classification pipeline, nested cross-validation ablation study, TCGA-BRCA external validation, report Methodology (Data Modelling) and Results sections, Discussion (Key Findings, Limitations, Future Work).
-- **Serafina Aurelia**: Cox proportional hazards survival models, LASSO-Cox pipeline, Kaplan-Meier survival analysis, report Survival Analysis sections and Discussion (survival implications).
-- **Kush**: LASSO logistic regression (114-gene selection), limma differential expression analysis, GSE96058 R data package, workflow diagram (Figure 1).
-- **Thinh**: SVM-RBF (svmRadial, e1071) classification pipeline, exploratory data analysis, data preprocessing pipeline, report Evaluation Strategy & Justification section.
-- **Ananda Maheswari**: Exploratory data analysis, clinical variable selection, report Executive Summary and Introduction.
-- **Nael**: Data preprocessing documentation, report Data Preprocessing section, formatting.
-
+-   **Gary (Guanyu Chen)**: Random Forest classification pipeline, nested cross-validation ablation study, TCGA-BRCA external validation, report Methodology (Data Modelling) and Results sections, Discussion (Key Findings, Limitations, Future Work).
+-   **Serafina Aurelia**: Cox proportional hazards survival models, LASSO-Cox pipeline, Kaplan-Meier survival analysis, report Survival Analysis sections and Discussion (survival implications).
+-   **Kush**: LASSO logistic regression (114-gene selection), limma differential expression analysis, GSE96058 R data package, workflow diagram (Figure 1).
+-   **Thinh**: SVM-RBF (svmRadial, e1071) classification pipeline, exploratory data analysis, data preprocessing pipeline, report Evaluation Strategy & Justification section.
+-   **Ananda Maheswari**: Exploratory data analysis, clinical variable selection, report Executive Summary and Introduction.
+-   **Nael**: Data preprocessing documentation, report Data Preprocessing section, formatting.
 
 # References
 
@@ -670,10 +661,9 @@ Robin, X., et al. (2011). pROC: an open-source package for R and S+ to analyze a
 
 Ramos, M., et al. (2017). Software for the Integration of Multiomics Experiments in Bioconductor. *Cancer Research*, 77(21), e39–e42.
 
-<div class="todo">
+::: todo
 <strong>Assigned to: Everyone</strong> — Add references for your own sections.
-</div>
-
+:::
 
 # Appendix
 
