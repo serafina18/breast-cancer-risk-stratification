@@ -510,6 +510,19 @@ pre code {
 <strong>Assigned to: Nael</strong> — Write the data preprocessing section.
 :::
 
+The analysis began with acquisition of the GSE96058 dataset, which contains breast cancer gene-expression data and associated clinical/sample metadata. The expression sub-matrices were first combined into one complete expression matrix, and the sample metadata were loaded separately so that molecular and clinical information could be processed in parallel before being merged for modelling.
+After data collection, the dataset was cleaned to ensure that only valid and comparable patient records were retained. Replicate samples were removed so that each patient contributed only one observation to the final analysis. Survival-related clinical variables were then derived from the metadata, including the outcome status and follow-up time required for Cox proportional hazards modelling. Missing clinical values were imputed where appropriate to reduce information loss, while still preserving the structure of the original cohort. The expression matrix was then aligned with the metadata so that each row in the clinical dataset matched the correct sample in the gene-expression dataset.
+
+Once the cleaned clinical and gene-expression data were aligned, a stratified 5-fold outer cross-validation split was created. Stratification was used to preserve the distribution of survival outcomes across folds, reducing the risk that any training or testing fold would be unrepresentative. In each outer fold, 80% of the data was used for training and 20% was held out for testing. This outer test set was not used during feature selection or model tuning, which helped provide a less biased estimate of final model performance.
+
+Within each outer training set, an inner 5-fold cross-validation procedure was applied for models using gene-expression predictors. For the gene-expression models, supervised gene selection was conducted inside the inner loop using a variance filter followed by differential expression screening with limma, retaining genes with adjusted significance criteria. The significant genes identified across the inner folds were then combined into a union gene set. Lasso regularisation was applied to this union set to reduce dimensionality further and select the most predictive genes while limiting overfitting.
+Three model types were then evaluated. Model 1 used histopathology and clinical variables only. Models 2 and 3 incorporated gene-expression predictors selected through the nested inner cross-validation process. Each model was refitted on the relevant outer-training dataset and then used to predict risk on the held-out outer-test fold. Predictive performance was evaluated using the C-statistic for Models 1, 2, and 3 across the five outer folds.
+
+After all outer folds were completed, the C-statistics were aggregated to compare the predictive performance of the three modelling approaches. Gene-selection stability was also assessed by identifying genes that were selected in at least 80% of model fits. These stable genes were then used in the final Cox proportional hazards model, which was fitted using all eligible patients. Based on the final model, patients were assigned predicted risk scores and grouped into tertile-based risk categories. These final risk cut-offs formed the basis of the final risk analysis tool.
+
+
+
+
 ## Data Modelling
 
 To systematically assess the contribution of each data modality, we designed five ablation models evaluated under a unified nested cross-validation framework:
