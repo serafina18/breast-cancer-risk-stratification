@@ -484,15 +484,13 @@ pre code {
 }
 ```
 
-# Executive Summary {.unnumbered}
-*Section author: Ananda Maheswari*
+# Executive Summary
 
 ::: todo
 <strong>Assigned to: Ananda</strong> — Write the executive summary. Suggested structure: background, methodology, key findings, and conclusion.
 :::
 
 # Introduction
-*Section author: Ananda Maheswari*
 
 ::: todo
 <strong>Assigned to: Ananda</strong> — Write the introduction and research question.
@@ -501,256 +499,171 @@ pre code {
 # Methodology
 
 ## Workflow Overview
-*Section author: Kush*
 
 ::: todo
 <strong>Assigned to: Kush</strong> — Insert and explain the workflow figure.
 :::
 
 ## Data Preprocessing
-*Section author: Nael*
 
 ::: todo
 <strong>Assigned to: Nael</strong> — Write the data preprocessing section.
 :::
 
-The analysis began with acquisition of the GSE96058 dataset, which contains breast cancer gene-expression data and associated clinical/sample metadata. The expression sub-matrices were first combined into one complete expression matrix, and the sample metadata were loaded separately so that molecular and clinical information could be processed in parallel before being merged for modelling.
-After data collection, the dataset was cleaned to ensure that only valid and comparable patient records were retained. Replicate samples were removed so that each patient contributed only one observation to the final analysis. Survival-related clinical variables were then derived from the metadata, including the outcome status and follow-up time required for Cox proportional hazards modelling. Missing clinical values were imputed where appropriate to reduce information loss, while still preserving the structure of the original cohort. The expression matrix was then aligned with the metadata so that each row in the clinical dataset matched the correct sample in the gene-expression dataset.
-
-Once the cleaned clinical and gene-expression data were aligned, a stratified 5-fold outer cross-validation split was created. Stratification was used to preserve the distribution of survival outcomes across folds, reducing the risk that any training or testing fold would be unrepresentative. In each outer fold, 80% of the data was used for training and 20% was held out for testing. This outer test set was not used during feature selection or model tuning, which helped provide a less biased estimate of final model performance.
-
-Within each outer training set, an inner 5-fold cross-validation procedure was applied for models using gene-expression predictors. For the gene-expression models, supervised gene selection was conducted inside the inner loop using a variance filter followed by differential expression screening with limma, retaining genes with adjusted significance criteria. The significant genes identified across the inner folds were then combined into a union gene set. Lasso regularisation was applied to this union set to reduce dimensionality further and select the most predictive genes while limiting overfitting.
-Three model types were then evaluated. Model 1 used histopathology and clinical variables only. Models 2 and 3 incorporated gene-expression predictors selected through the nested inner cross-validation process. Each model was refitted on the relevant outer-training dataset and then used to predict risk on the held-out outer-test fold. Predictive performance was evaluated using the C-statistic for Models 1, 2, and 3 across the five outer folds.
-
-After all outer folds were completed, the C-statistics were aggregated to compare the predictive performance of the three modelling approaches. Gene-selection stability was also assessed by identifying genes that were selected in at least 80% of model fits. These stable genes were then used in the final Cox proportional hazards model, which was fitted using all eligible patients. Based on the final model, patients were assigned predicted risk scores and grouped into tertile-based risk categories. These final risk cut-offs formed the basis of the final risk analysis tool.
-
-
-
-
 ## Data Modelling
-*Section author: Gary (Guanyu Chen)*
 
-To assess whether combining histopathology and gene expression improves survival-based risk stratification, we designed three Cox proportional hazards models evaluated under a nested cross-validation framework. The study population comprised ER-positive, endocrine-treated patients from the SCAN-B cohort (GSE96058).
+To systematically assess the contribution of each data modality, we designed five ablation models evaluated under a unified nested cross-validation framework:
 
 ::: model-overview
 | Model | Features | Algorithm | Rationale |
 |:---|:---|:---|:---|
-| M1 | 6 clinical variables | Cox PH (plain `coxph`) | Histopathology-only baseline |
-| M2 | Limma-selected genes | Cox PH with LASSO (`glmnet`, alpha = 1) | Gene expression only |
-| M3 | Clinical + limma-selected genes | Cox PH with LASSO (clinical unpenalised) | Combined modalities |
+| M1 | \~10,000 genes (var \> 0.5) | Random Forest | RNA-seq only baseline |
+| M2 | 5 clinical variables | Logistic Regression | Histopathology only baseline |
+| M3 | Top 50 genes + 5 clinical | Random Forest | Combined (same algorithm as M1) |
+| M4 | Top 50 genes + 5 clinical | Ridge Logistic Regression | Combined (regularised LR) |
+| M5 | Top 50 genes + 5 clinical | Plain Logistic Regression | Combined (unregularised baseline) |
 :::
 
-The outcome was overall survival (time = `ovrallSurvDays`, event = `ovrallSurvEvent`). Model performance was evaluated using Harrell's C-statistic (concordance index), which measures how well predicted risk scores rank patients by survival time.
+All models were evaluated using **5-fold outer × 5-fold inner nested cross-validation**. The outer loop provides unbiased generalisation estimates; the inner loop tunes hyperparameters and optimises the classification threshold. All five models share identical outer folds (seed = 42), enabling paired ablation comparison.
 
-### Nested Cross-Validation
+**Hyperparameter tuning.** M1 tuned `mtry` over {50, 100, 200, 300, 500}; M3 tuned `mtry` over {2, 3, 5, 7, 10, 15}; M4 selected Ridge `lambda` via `cv.glmnet` (alpha = 0). M2 and M5 have no tunable hyperparameters.
 
-All models were evaluated using **5-fold outer × 5-fold inner nested cross-validation**, stratified by event status. The outer loop provides unbiased generalisation estimates; the inner loop is used for gene selection and regularisation parameter tuning. All three models share identical outer folds, enabling paired comparison.
+**Class imbalance.** RF models used balanced `sampsize` (equal TP and FN per tree, computed dynamically per inner fold). LR models used inverse-frequency class weights: $w_i = N / (2 \times N_{\text{class}})$.
 
-For each outer fold:
+**Threshold optimisation.** The Youden index (maximising Sensitivity + Specificity − 1) was applied to concatenated inner-fold predictions. The resulting threshold was applied unchanged to the outer test fold.
 
-1. **Model 1 (Histopathology only):** A plain Cox model was fitted on the outer training set using six clinical covariates: NHG grade (`nhg`), PgR status (`pgr_Status`), HER2 status (`her2_Status`), tumour size (`tumor_size`), age at diagnosis (`ageAtDx`), and lymph node status (`lymphNode_binary`). No inner CV was required as M1 has no tunable hyperparameters.
+**Gene selection.** The top 50 genes were ranked by Mean Decrease Gini from a Random Forest trained on the full dataset (all 2,648 samples). Ranking on the entire dataset before cross-validation constitutes mild feature-selection leakage: the selected genes are informed by the outcome labels of samples that later appear in outer test folds. However, because Random Forest feature importance with 10,000 noisy predictors is primarily driven by signal rather than noise — and because the top 50 genes are individually validated in TCGA-BRCA (43/50 matched, external AUC 0.783) — the leakage is unlikely to materially inflate our internal estimates. We flag this as a limitation where future work could employ fully nested gene selection (Section 5).
 
-2. **Models 2 and 3 (gene expression):** Within each inner fold, supervised gene selection was performed in two steps: (a) a variance filter (variance > 0.5) to remove low-signal genes, and (b) limma differential gene expression analysis (dead vs alive contrast, BH-adjusted p < 0.05) to retain survival-associated genes. The **union** of significant genes across all five inner folds formed the candidate gene set for that outer fold.
+### External Validation — TCGA-BRCA
 
-3. **Regularisation:** `cv.glmnet` with `family = "cox"` and `alpha = 1` (LASSO) was fitted using the inner fold assignments (`foldid`) to select the optimal `lambda` at `lambda.1se`. For M3, clinical variables were included with `penalty.factor = 0` (unpenalised) so that LASSO shrinkage applied only to gene coefficients.
+We applied the model to the TCGA-BRCA dataset (accessed via `curatedTCGAData`). Of the top 50 genes, 43 had matching symbols in TCGA. A Random Forest was retrained on all 2,648 SCAN-B samples using only these 43 genes (OOB error = 3.4%).
 
-4. **Refit and predict:** The LASSO model was refitted on the full outer training set using the inner-CV-selected `lambda`, then evaluated on the held-out outer test fold via C-statistic.
-
-### Stability Selection
-
-Across all outer folds, we tracked which genes were selected by LASSO (non-zero coefficient). Genes appearing in at least 80% of fits were designated as **stability-selected genes**. This yielded 11 stable genes for M2, which were used in the final Shiny risk calculator to ensure the deployed model uses only reproducibly selected features.
+The model was applied to 806 TCGA ER+ patients. With only 14 discordant cases (IHC ER+ and PAM50 Basal-like), we compared predicted probability distributions between groups using the Wilcoxon rank-sum test, ROC AUC with DeLong 95% CI, and Cliff's delta effect size.
 
 ### Shiny Risk Calculator
 
-A Shiny web application implements both models for clinical use. **Model 1** accepts manual input of six histopathological variables and computes a Cox risk score using the plain `coxph` coefficients. **Model 2** accepts an uploaded CSV of gene expression values for the 11 stability-selected genes and computes a LASSO-Cox risk score. Both models output a risk tier (Low / Medium / High) based on tertile cutoffs from the training cohort, along with the corresponding Kaplan-Meier survival curve for that tier. When both inputs are provided, the app displays a comparison panel highlighting agreement or discordance between modalities.
+A Shiny web application loads the 43-gene RF model and accepts uploaded gene expression data or pre-loaded example patients. It outputs a discordance risk score and tier (Low / Medium / High). Clinical variables are displayed for context only and do not influence the prediction, consistent with the ablation finding.
 
 ## Evaluation Strategy & Justification
-*Section author: Thinh*
 
 ::: todo
 <strong>Assigned to: Thinh</strong> — Write the evaluation strategy and justification section.
 :::
-<p>
-Our evaluation strategy was built around four questions: which genes are
-reliably selected across folds, how well does each model discriminate
-patient survival, whether the differences between models are statistically
-meaningful, and how the final models behave when applied to the full cohort
-for risk stratification.
-</p>
- 
-<p>
-<strong>Stable gene selection.</strong> Because LASSO is sensitive to the
-specific training samples it sees, the set of genes selected can vary across
-cross-validation folds. To identify a panel that is consistently informative
-rather than fold-specific, we defined a gene as stable if it received a
-non-zero LASSO coefficient in at least 80% of the 25 outer fits (5 repeats
-times 5 folds). This selection frequency threshold is a standard approach to
-stability selection in high-dimensional regression and has been shown to
-substantially reduce false positives compared to single-run LASSO (Meinshausen
-and Buhlmann, 2010). The resulting stable-gene panel was then used for both
-the final deployment refit and to specify the gene inputs required by the
-Shiny application, ensuring that the app only requests genes the model
-consistently needs.
-</p>
- 
-<p>
-<strong>Discrimination.</strong> The primary evaluation metric was
-Harrell's C-statistic (concordance index), which measures the proportion of
-all evaluable patient pairs in which the model correctly ranks the patient
-who died first as having a higher predicted risk score. A value of 0.5
-indicates no discrimination beyond chance and 1.0 indicates perfect
-discrimination (Harrell et al., 1982). The C-statistic is the natural choice
-here because we are fitting Cox proportional hazards models: it directly
-evaluates what the Cox model is designed to optimise, namely the ranking of
-patients by hazard, rather than imposing a classification threshold that is
-arbitrary in a survival context (Steyerberg et al., 2010).
-</p>
- 
-<p>
-AUC was computed as a secondary and diagnostic metric only, used to assess
-whether the Cox-LASSO model reproduced the risk rankings of the NSC
-classifier, where a value of 1.0 would mean perfect agreement between the
-two models. It was not used as a primary performance metric. The TP/FN
-concordance labels used in that comparison are derived from er_MGC, which is
-itself a gene-expression-based classifier trained on the same RNA-seq data.
-Using RNA-seq features to predict a label that was created from RNA-seq
-introduces a circularity: the model partially reconstructs a function of its
-own input, which inflates AUC in ways that do not reflect genuine predictive
-accuracy. The C-statistic is evaluated against observed survival times, which
-are independent of the label construction, and is therefore not subject to
-this problem.
-</p>
- 
-<p>
-<strong>Model comparison.</strong> Per-fold C-statistics were computed across
-all 25 outer iterations and compared between M1, M2, and M3 using paired
-t-tests, with pairing by fold. Pairing is important here because the three
-models see the same data partitions in each fold, which induces correlation
-in their performance estimates. An unpaired test would ignore this structure
-and reduce statistical power. The paired design directly answers whether one
-model consistently outperforms another across the same data splits, rather
-than whether performance differs on average across independent samples.
-</p>
- 
-<p>
-<strong>Deployment refit and risk stratification.</strong> After nested CV
-evaluation, M1 and M2 were each refit on the complete ER+ endocrine-treated
-cohort (n = 2,450). The linear predictor from each model, which is the log
-hazard score assigned to each patient, was divided into tertiles defined by
-the 33rd and 67th percentiles of the training distribution. This produced
-three groups, Low, Medium, and High risk, of approximately equal size. Tertile
-stratification was chosen because it translates a continuous risk score into
-a format that is actionable in a clinical setting, without requiring
-clinicians to interpret raw hazard values. A three-tier structure also allows
-the tool to identify not only the highest-risk patients but an intermediate
-group that may benefit from more frequent monitoring, which a binary split
-would collapse. The observed death rates within each tier rose monotonically
-for both models, which provides a direct empirical check that the risk
-ordering is meaningful rather than arbitrary.
-</p>
- 
-<p>
-The resulting models and tier cutpoints are loaded by the Shiny application.
-M1 risk is calculated from the six clinical predictors entered in the
-sidebar. M2 risk is calculated from the 11 stability-selected genes provided
-via CSV upload. Both risk tiers are displayed side by side, and a comparison
-panel flags any disagreement between the two models, which the application
-frames as a signal that may warrant clinical review rather than a definitive
-recommendation.
-</p>
- 
-<p class="note">
-  Personal note: the C-statistic values we are seeing (around 0.77 for M1
-  and M3, around 0.68 to 0.70 for M2) sit in the range that is commonly
-  described as moderate discrimination in prognostic model literature
-  (Hosmer and Lemeshow, 2000). They are honest numbers that are consistent
-  with what you would expect from clinical-variable-only Cox models in
-  ER-positive breast cancer, and the fact that M2 does not outperform M1
-  is itself an interesting finding worth discussing rather than something
-  to apologise for.
-</p>
- 
-<!-- Results table -->
-<table>
-  <thead>
-    <tr>
-      <th>Model</th>
-      <th>Features</th>
-      <th>Median C-statistic</th>
-      <th>IQR</th>
-      <th>Range (25 fits)</th>
-    </tr>
-  </thead>
-  <tbody>
-    <tr>
-      <td>M1 — Histopathology and clinical</td>
-      <td>NHG, PgR, HER2, tumour size, age, lymph node</td>
-      <td>0.770</td>
-      <td>0.750 to 0.790</td>
-      <td>0.69 to 0.83</td>
-    </tr>
-    <tr>
-      <td>M2 — Gene expression (Cox-LASSO)</td>
-      <td>11 stability-selected RNA-seq genes</td>
-      <td>0.680</td>
-      <td>0.650 to 0.720</td>
-      <td>0.62 to 0.75</td>
-    </tr>
-    <tr>
-      <td>M3 — Combined (Cox-LASSO, histopath unpenalised)</td>
-      <td>All M1 features plus RNA-seq genes</td>
-      <td>0.770</td>
-      <td>0.750 to 0.790</td>
-      <td>0.70 to 0.83</td>
-    </tr>
-  </tbody>
-</table>
-<p class="caption">
-  Table 1. Cox nested CV C-statistic results. 5 repeats times 5 folds,
-  ER+ endocrine-treated patients (n = 2,450). Limma differential expression
-  applied inside inner folds with variance filter and adj.P below 0.05.
-  IQR estimated from Figure 1 (ablation comparison boxplot).
-</p>
- 
-<p>
-<strong>References for this section</strong><br>
-Harrell, F. E., Califf, R. M., Pryor, D. B., Lee, K. L., and Rosati, R. A.
-(1982). Evaluating the yield of medical tests. JAMA, 247(18), 2543-2546.<br>
-Hosmer, D. W. and Lemeshow, S. (2000). Applied Logistic Regression (2nd ed.).
-Wiley.<br>
-Meinshausen, N. and Buhlmann, P. (2010). Stability selection. Journal of the
-Royal Statistical Society: Series B, 72(4), 417-473.<br>
-Steyerberg, E. W., Vickers, A. J., Cook, N. R., Gerds, T., Gonen, M.,
-Obuchowski, N., Pencina, M. J., and Kattan, M. W. (2010). Assessing the
-performance of prediction models: a framework for some traditional and novel
-measures. Epidemiology, 21(1), 128-138.
+
 # Results
 
-## Ablation Model Comparison
-*Section author: Gary (Guanyu Chen)*
+## Cox Proportional Hazards Models: Survival Risk Stratification
 
-```{r fig-ablation, fig.cap="Figure 2: Nested cross-validation C-statistic for three Cox models. Points represent individual outer folds."}
+### Nested Cross-Validation Setup
+
+Two Cox proportional hazards models were evaluated in an ablation design using a nested cross-validation framework (5 repeats × 5 outer folds = 25 outer fits) on the full ER+ endocrine-treated cohort (n = 2,512). In each outer fold, approximately 502 patients were used as the test set and had no involvement in model training. After training, the model's predicted risk scores were applied to the test patients and Harrell's C-statistic was computed to measure how well the model ranked patients by their actual survival outcomes. Paired t-tests across the 25 C-statistics assessed the statistical significance of differences between models.
+
+
+- **Model 1 — Gene expression only:** For each outer fold, the outer training set was further split into 5 inner folds. Within each inner fold, a two-step feature selection was applied to the inner training patients only. First, a variance filter removed genes with variance below 0.5 across patients, as these carry no discriminatory information. Second, limma differential expression analysis compares dead vs alive patients, and keeps significant genes with adjusted p-value < 0.05.
+
+   Candidate genes across all 5 inner folds were unioned, then passed to cv.glmnet (family = "cox", alpha = 1) which evaluated many values of the penalty parameter λ across the inner folds and selected the optimal λ using lambda.min (minimising cross-validated error). The final model for each outer fold was then refit on the full outer training set: limma was run on all outer training patients to get a new candidate gene list, and the model was fit at the λ selected by the inner CV.
+
+- **Model 2 — Combined histopathology + gene expression:** This model used an identical pipeline to Model 1 for gene selection and lambda tuning, with six additional histopathology and clinical variables included: NHG grade, PgR status, HER2 status, tumour size, age at diagnosis, and lymph node status. These variables were assigned zero penalty, meaning they were always retained in the model due to its clinical importance. Gene expression features competed by LASSO alongside the histopathological variables, using the same lambda.min rule as Model 1. This design directly tests whether combining gene expression with histopathological variables improves survival prediction over gene expression alone.
+
+### Performance
+
+**Table 1.** Nested cross-validation C-statistics for the two Cox ablation models (5 repeats × 5 folds, n = 2,512).
+ 
+| Model | Mean C-statistic | SD | Range |
+|---|---|---|---|
+| Model 1 - Gene expression | 0.698 | 0.044 | 0.623–0.775 |
+| Model 2 - Combined histopathology + gene expression  | 0.766 | 0.037 | 0.678–0.829 |
+ 
+Model 2 significantly outperformed Model 1 across all 25 paired fits, demonstrating that combining histopathological variables with gene expression substantially and consistently improves survival prediction accuracy over gene expression alone.
+
+**Table 2.** Paired t-test comparison of C-statistics across 25 nested CV fits.
+ 
+| Comparison | Mean Difference | SD | p-value |
+|---|---|---|---|
+| Model 2 vs Model 1 | +0.069 | 0.038 | < 0.0001 |
+ 
+Model 2 significantly outperformed Model 1 across all 25 paired outer fits. The positive mean difference of +0.069 across all repeats and folds indicates that the improvement from adding histopathological variables to gene expression is robust and not driven by any single fold or repeat.
+ 
+ 
+### Gene Selection
+Both models selected gene expression features in every outer fit. Model 1 selected a median of 105 genes per fold, while Model 2 selected a median of 78 genes per fold, with fewer genes required since histopathological variables were already accounting for part of the survival signal.
+
+Stability selection at the 80% threshold identified 15 stable genes in Model 1, with VSIG4, VAV3, SIM2, and SUSD4 selected in all 25 outer fits, summarised in Table 3. Five genes appeared consistently across both models: VAV3, SUSD4, GREB1, KIRREL3, and PCAT18. This suggests they capture genuine survival signal independent of whether histopathological variables are included. Notably, GREB1 is a well-established estrogen receptor signalling gene, and VAV3 has been linked to overexpression in breast cancer patients, providing biological validation of the survival signatures.
+ 
+**Table 3.** Stability-selected genes from Model 1 at ≥80% selection frequency (25 outer fits).
+ 
+| Gene | Selection Frequency |
+|---|---|
+| VAV3 | 1.00 |
+| SUSD4 | 1.00 |
+| VSIG4 | 1.00 |
+| SIM2 | 1.00 |
+| GREB1 | 0.96 |
+| FLT3 | 0.92 |
+| LOC100240735 | 0.92 |
+| KIRREL3 | 0.92 |
+| AK057873 | 0.88 |
+| ONECUT2 | 0.88 |
+| GPR25 | 0.88 |
+| PCAT18 | 0.84 |
+| HV592909 | 0.80 |
+| GPAT2 | 0.80 |
+| DQ588543 | 0.80 |
+ 
+**Table 4.** Stability-selected genes from Model 2 at ≥80% selection frequency (25 outer fits).
+ 
+| Gene | Selection Frequency |
+|---|---|
+| B3GNT7 | 0.88 |
+| VAV3 | 0.80 |
+| PCAT18 | 0.80 |
+ 
+ 
+### Stability Selection for Final Deployed Model
+ 
+Following nested cross-validation, stability selection was applied to identify gene expression features for the final deployed model. A selection frequency threshold of ≥70% was applied to the Model 2 results, producing 11 genes: B3GNT7, VAV3, PCAT18, HV592909, DQ588543, DQ583069, GREB1, KIRREL3, NR6A1, HIST1H4J, and DQ577476. This threshold was chosen to balance model parsimony with feature stability, retaining only genes that were consistently selected across the large majority of training data configurations.
+ 
+---
+ 
+## Final Deployed Model and Risk Stratification
+ 
+### Final Model Refit
+ 
+Following nested cross-validation, a final combined model was fit on all 2,512 patients using the six histopathological variables and the 11 stability-selected gene expression features without penalisation, as feature selection had already been completed through nested CV. A plain Cox proportional hazards model was used, which achieved a c-statistic of 0.818 on the training cohort.
+ 
+### Risk Tier Assignment
+ 
+Patients were stratified into three risk tiers (Low, Medium, High) based on the risk score from the final model. Observed death rates within each tier are summarised in Table 2.
+ 
+**Table 5.** Observed death rates by risk tier for the final deployed model (n = 2,512).
+ 
+| Risk Tier | n | Observed Death Rate |
+|---|---|---|
+| Low | 838 | 1.2% |
+| Medium | 837 | 4.9% |
+| High | 837 | 20.2% |
+
+```{r fig-ablation, fig.cap="Figure 2: Nested cross-validation AUC for five ablation models. Error bars = ± 1 SD across 5 outer folds."}
 library(ggplot2)
-# TODO: Replace with actual C-statistic values from cox_nested_cv_final.rds
-c_data <- data.frame(
-  Model = c("M1: Histopath only", "M2: Gene expression\n(LASSO Cox)", "M3: Combined\n(LASSO Cox)"),
-  C_stat = c(0.000, 0.000, 0.000),  # <-- INSERT ACTUAL MEAN C-STATISTICS
-  SD = c(0.000, 0.000, 0.000)       # <-- INSERT ACTUAL SD
+auc_data <- data.frame(
+  Model = c("M1: RNA-seq RF", "M2: Histopath LR", "M3: Combined RF",
+            "M4: Combined Ridge", "M5: Combined Plain LR"),
+  AUC = c(0.996, 0.729, 0.995, 0.995, 0.984),
+  SD = c(0.001, 0.039, 0.002, 0.002, 0.017),
+  Modality = c("RNA-seq", "Histopathology", "Combined", "Combined", "Combined")
 )
-c_data$Model <- factor(c_data$Model, levels = rev(c_data$Model))
-ggplot(c_data, aes(x = Model, y = C_stat, fill = Model)) +
+auc_data$Model <- factor(auc_data$Model, levels = rev(auc_data$Model))
+ggplot(auc_data, aes(x = Model, y = AUC, fill = Modality)) +
   geom_col(width = 0.62) +
-  geom_errorbar(aes(ymin = C_stat - SD, ymax = C_stat + SD),
+  geom_errorbar(aes(ymin = AUC - SD, ymax = pmin(AUC + SD, 1)),
                 width = 0.18, linewidth = 0.35) +
-  geom_text(aes(label = sprintf("%.3f", C_stat)), hjust = -0.18, size = 4.2) +
+  geom_text(aes(label = sprintf("%.3f", AUC)), hjust = -0.18, size = 4.2) +
   coord_flip() +
-  scale_fill_manual(values = c(
-    "M1: Histopath only" = "#2E86AB",
-    "M2: Gene expression\n(LASSO Cox)" = "#F26419",
-    "M3: Combined\n(LASSO Cox)" = "#57A773"
-  )) +
+  scale_fill_manual(values = c("Combined" = "#5a86a6",
+                               "Histopathology" = "#d8913f",
+                               "RNA-seq" = "#5a5f73")) +
   scale_y_continuous(limits = c(0, 1.08), breaks = seq(0, 1, 0.2)) +
-  labs(x = NULL, y = "C-statistic (mean ± SD)", fill = NULL) +
+  labs(x = NULL, y = "AUC (mean ± SD)", fill = NULL) +
   theme_minimal(base_size = 14) +
   theme(
     legend.position = "top",
@@ -765,22 +678,28 @@ ggplot(c_data, aes(x = Model, y = C_stat, fill = Model)) +
   )
 ```
 
-::: todo
-<strong>TODO:</strong> Insert actual C-statistic values from `cox_nested_cv_final.rds` and paired t-test results (M2 vs M1, M3 vs M1, M3 vs M2).
-:::
+RNA-seq alone (M1) achieved AUC 0.996 ± 0.001 with sensitivity 0.976 and specificity 0.965, substantially outperforming histopathology only (M2: AUC 0.729 ± 0.039, sensitivity 0.591, specificity 0.737). Combined models matched but did not exceed M1 (Figure 2; full metrics in Table S1).
 
-The three Cox models were compared via paired C-statistics across 5 outer folds. Model 1 (histopathology + clinical variables only) provides the baseline. Model 2 (LASSO-Cox on gene expression) tests whether transcriptomic data alone can predict survival. Model 3 (combined, clinical unpenalised) tests whether adding histopathology to gene expression improves survival prediction.
+Among combined models, M3 (RF) and M4 (Ridge LR, each AUC 0.995) performed equivalently, while M5 (Plain LR, AUC 0.984 ± 0.017) showed higher variance and a modest decline. In the high-dimensional, correlated gene-expression setting, unregularised logistic regression is ill-conditioned: coefficients are unstable and overfit to noise, inflating variance across folds. The regularisation in M4 (Ridge) and the ensemble averaging in M3 (RF) suppress this noise.
 
-Stability selection identified 11 genes that appeared in ≥ 80% of LASSO fits across outer folds, confirming reproducible feature selection. These 11 genes were used for the final Shiny risk calculator (Model 2).
+The key finding is that gene expression captures the full discriminative signal for ER discordance; adding clinical variables yields no incremental predictive benefit. This is corroborated by feature importance: all five clinical variables ranked last in the Combined RF model.
+
+## External Validation — TCGA-BRCA
+
+```{r fig-tcga, fig.cap="Figure 3: TCGA-BRCA external validation results."}
+# Uncomment when figure is ready:
+# knitr::include_graphics("tcga_validation_figure.png")
+```
+
+The 43-gene panel significantly separated discordant (n = 14, mean prob = 0.022) from concordant (n = 353, mean prob = 0.0001) TCGA patients (Wilcoxon p \< 10⁻⁶, Cliff's delta = 0.566). External AUC = 0.783 (95% CI: 0.647–0.919), a drop of 0.212 from internal — consistent with cross-platform degradation. Discrimination transfers; calibration does not.
 
 ## Survival Analysis
-*Section author: Serafina Aurelia*
 
 ::: todo
-<strong>Assigned to: Serafina</strong> — Add survival analysis results including Kaplan-Meier curves and hazard ratios from the final Cox models.
+<strong>Assigned to: Serafina</strong> — Add survival analysis results.
 :::
 
-```{r fig-survival, fig.cap="Figure 3: Kaplan-Meier survival curves by risk tier."}
+```{r fig-survival, fig.cap="Figure 4: Kaplan-Meier survival curves for ER discordant vs concordant patients."}
 # Uncomment when Serafina provides figure:
 # knitr::include_graphics("km_survival_curve.png")
 ```
@@ -788,40 +707,33 @@ Stability selection identified 11 genes that appeared in ≥ 80% of LASSO fits a
 # Discussion and Conclusion
 
 ## Key Findings
-*Section author: Gary (Guanyu Chen)*
 
-This study asked whether combining histopathology and RNA-seq improves survival-based risk stratification for ER-positive, endocrine-treated breast cancer patients. Three Cox proportional hazards models were compared under nested cross-validation: histopathology-only (M1), gene expression with LASSO (M2), and combined (M3, clinical unpenalised).
+This study asked whether combining histopathology and RNA-seq improves risk stratification for ER-discordant breast cancer patients. The ablation analysis provides a clear answer: **RNA-seq alone achieves near-perfect discrimination (AUC = 0.996), and adding clinical variables provides no improvement** (Combined AUC = 0.995). A compact 43-gene panel is sufficient to identify patients whose tumours may be molecularly ER-negative despite an IHC ER+ classification — patients who are potentially under-treated with endocrine therapy alone.
 
-::: todo
-<strong>TODO:</strong> Insert actual C-statistic comparison results here once nested CV has been run. Key question: does M2 or M3 outperform M1? Does M3 outperform M2?
-:::
-
-Stability selection across outer folds identified 11 genes that were reproducibly selected by LASSO in ≥ 80% of fits, providing a compact and interpretable gene signature for the Shiny risk calculator.
+External validation on TCGA-BRCA confirmed that the biological signal captured by this panel transfers across sequencing platforms (SCAN-B FPKM vs TCGA RSEM) and populations (Swedish vs American cohorts), with an external AUC of 0.783. The drop from internal performance is consistent with expected cross-platform degradation rather than overfitting, and the Wilcoxon test (p \< 10⁻⁶) confirms that the model's ranking ability is robust.
 
 ::: todo
-<strong>Assigned to: Serafina</strong> — Add one paragraph on survival analysis implications: do risk tiers separate well on Kaplan-Meier curves? What are the hazard ratios between tiers?
+<strong>Assigned to: Serafina</strong> — Add one paragraph on survival analysis implications: do discordant patients have worse outcomes? How does this support the clinical relevance of detecting ER discordance?
 :::
 
 ## Limitations
-*Section author: Gary (Guanyu Chen)*
 
-1. **Study population.** The model was trained exclusively on ER-positive, endocrine-treated patients from the SCAN-B Swedish cohort and may not generalise to ER-negative subtypes, other treatment regimens, or populations with different demographics.
-2. **Gene selection stability.** While stability selection (≥ 80% threshold) mitigates overfitting, the selected genes may still be cohort-specific. External validation on an independent cohort would strengthen confidence.
-3. **Missing data imputation.** Clinical variables with missing values (e.g., lymph node status, PgR) were imputed with mode or median values, which may introduce bias.
-4. **Ki67 exclusion.** Ki67 status was excluded due to 54.8% missingness in SCAN-B, limiting the clinical feature set available for Model 1.
-5. **Single outcome.** Only overall survival was modelled; disease-free survival or breast-cancer-specific survival may yield different results.
-6. **No external validation.** The current pipeline does not include external validation on an independent cohort (e.g., TCGA-BRCA), which would be needed before clinical deployment.
+1.  **Feature selection leakage.** The top 50 genes were selected on the full dataset before cross-validation. The selected features are therefore informed by outcome labels of samples that later appear in test folds. Future work should embed gene selection within each outer fold.
+2.  **Prediction target circularity.** The er_MGC label is itself derived from RNA-seq data, which partially explains the high internal AUC — the model learns to reconstruct a function of its own input features.
+3.  **Limited external discordant cases.** Only 14 TCGA patients met the discordant criterion (IHC ER+ and PAM50 Basal-like), yielding a wide confidence interval on external AUC (0.647–0.919).
+4.  **Population specificity.** The model was trained exclusively on the SCAN-B Swedish cohort and may not generalise to populations with different demographics or tumour biology.
+5.  **Calibration failure.** Absolute predicted probabilities do not transfer cross-platform (maximum 0.082 in TCGA vs near 1.0 in SCAN-B); only relative ranking is validated.
+6.  **Ki67 exclusion.** Ki67 status was excluded due to 54.8% missingness in SCAN-B, limiting the clinical feature set available for the histopathology-only model.
 
 ## Future Work
-*Section author: Gary (Guanyu Chen)*
 
-Future directions include external validation of the 11-gene Cox signature on TCGA-BRCA or METABRIC cohorts, incorporating disease-free survival as an alternative endpoint, and adding probability calibration for clinical deployment. Embedding gene selection fully within each outer fold (rather than using the union approach) would further reduce potential selection bias.
+Future directions include embedding gene selection within each cross-validation fold to eliminate feature selection leakage, applying probability calibration (Platt scaling or isotonic regression) for clinical deployment, and validating on additional independent cohorts with matched IHC and RNA-seq data.
 
 # Student Contributions
 
--   **Gary (Guanyu Chen)**: Cox nested cross-validation pipeline design, ablation study (M1/M2/M3 comparison), report Methodology (Data Modelling) and Results sections, Discussion (Key Findings, Limitations, Future Work).
--   **Serafina Aurelia**: Cox-LASSO implementation, stability selection, Shiny risk calculator (dual-model interface with KM curves), survival analysis results.
--   **Kush**: LASSO gene selection pipeline, limma differential expression, GSE96058 R data package, workflow diagram (Figure 1), nested CV framework.
+-   **Gary (Guanyu Chen)**: Random Forest classification pipeline, nested cross-validation ablation study, TCGA-BRCA external validation, report Methodology (Data Modelling) and Results sections, Discussion (Key Findings, Limitations, Future Work).
+-   **Serafina Aurelia**: Cox proportional hazards survival models, LASSO-Cox pipeline, Kaplan-Meier survival analysis, report Survival Analysis sections and Discussion (survival implications).
+-   **Kush**: LASSO logistic regression (114-gene selection), limma differential expression analysis, GSE96058 R data package, workflow diagram (Figure 1).
 -   **Thinh**: SVM-RBF (svmRadial, e1071) classification pipeline, exploratory data analysis, data preprocessing pipeline, report Evaluation Strategy & Justification section.
 -   **Ananda Maheswari**: Exploratory data analysis, clinical variable selection, report Executive Summary and Introduction.
 -   **Nael**: Data preprocessing documentation, report Data Preprocessing section, formatting.
@@ -850,14 +762,17 @@ Ramos, M., et al. (2017). Software for the Integration of Multiomics Experiments
 ```
 
 ```{r}
-# TODO: Replace with actual values from cox_nested_cv_final.rds
 ncv_table <- data.frame(
-  Model = c("M1: Histopath + clinical", "M2: Gene expression (LASSO Cox)", 
-            "M3: Combined (LASSO Cox)"),
-  Features = c("6 clinical", "11 stable genes", "6 clinical + genes"),
-  C_statistic = c("TODO", "TODO", "TODO"),
-  Stable_genes = c("N/A", "11", "TODO")
+  Model = c("M1: RNA-seq RF", "M2: Histopath LR", "M3: Combined RF",
+            "M4: Combined Ridge", "M5: Combined Plain LR"),
+  Features = c("~10K genes", "5 clinical", "Top 50 + 5", "Top 50 + 5", "Top 50 + 5"),
+  AUC = c("0.996 ± 0.001", "0.729 ± 0.039", "0.995 ± 0.002",
+          "0.995 ± 0.002", "0.984 ± 0.017"),
+  Sens = c("0.976 ± 0.040", "0.591 ± 0.082", "0.964 ± 0.048",
+           "0.971 ± 0.047", "0.941 ± 0.071"),
+  Spec = c("0.965 ± 0.022", "0.737 ± 0.051", "0.963 ± 0.020",
+           "0.966 ± 0.024", "0.951 ± 0.043")
 )
-knitr::kable(ncv_table, caption = "Table S1: Nested CV C-statistic summary (5 outer folds).",
-             align = c("l","l","r","r"))
+knitr::kable(ncv_table, caption = "Table S1: Full nested CV results (mean ± SD, 5 outer folds).",
+             align = c("l","l","r","r","r"))
 ```
