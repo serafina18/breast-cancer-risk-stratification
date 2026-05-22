@@ -1,0 +1,551 @@
+---
+title: "COX MODELS"
+output: 
+  html_document:
+    code_folding: hide
+date: "2026-05-03"
+---
+
+```{r setup, include = FALSE}
+knitr::opts_chunk$set(
+  warning = FALSE,
+  message = FALSE
+)
+```
+
+
+```{r}
+#Imports and Data setup
+library(GSE96058)
+library(tidyverse)
+library(survival)
+library(glmnet)
+library(limma)
+library(survcomp)
+
+for (OBJ in data(package = "GSE96058")$results[, "Item"])
+  assign(sub("GSE96058_", "", OBJ), get(OBJ))
+
+detach(package:GSE96058, unload = TRUE)
+
+full_expression <- cbind(
+  geneExpression_sub1,
+  geneExpression_sub2,
+  geneExpression_sub3,
+  geneExpression_sub4,
+  geneExpression_sub5,
+  geneExpression_repl1
+)
+
+df_full <- sampDesc %>%
+  filter(isRepl == FALSE,
+         er_Status != "NA")
+
+df_erpos_endo <- df_full %>%
+  filter(er_Status == 1,
+         endocrine_treated == 1) %>%
+  mutate(
+    lymphNode_binary = case_when(
+      lymphNode_Status == "NodeNegative" ~ 0,
+      lymphNode_Status == "NodePositive" ~ 1,
+      TRUE ~ NA_real_
+    ),
+    lymphNode_binary = ifelse(is.na(lymphNode_binary), 0, lymphNode_binary),
+    pgr_Status       = ifelse(is.na(pgr_Status),  1, pgr_Status),
+    her2_Status      = ifelse(is.na(her2_Status),  0, her2_Status),
+    tumor_size       = ifelse(is.na(tumor_size),
+                              median(tumor_size, na.rm = TRUE), tumor_size),
+    ovrallSurvEvent  = as.numeric(ovrallSurvEvent)
+  )
+
+
+expr_endo <- full_expression[,
+               colnames(full_expression) %in% df_erpos_endo$title,
+               drop = FALSE]
+
+df_erpos_endo <- df_erpos_endo[
+  match(colnames(expr_endo), df_erpos_endo$title), ]
+stopifnot(identical(colnames(expr_endo), df_erpos_endo$title))
+
+
+```
+
+
+```{r}
+#HYPERPARAMETERS
+
+var_thresh      <- 0.5
+pval_thresh     <- 0.05
+n_outer_repeats <- 5
+n_outer_folds   <- 5
+n_inner_folds   <- 5
+
+histopath_vars <- c("nhg", "pgr_Status", "her2_Status",
+                    "tumor_size", "ageAtDx", "lymphNode_binary")
+
+
+
+#HELPER FUNCTIONS
+
+make_stratified_folds <- function(y, nfolds, seed) {
+  set.seed(seed)
+  fold_id <- integer(length(y))
+  for (cls in unique(y)) {
+    idx <- which(y == cls)
+    fold_id[idx] <- sample(rep(seq_len(nfolds), length.out = length(idx)))
+  }
+  fold_id
+}
+
+select_genes_limma <- function(expr_train, event_train,
+                               var_thresh, pval_thresh) {
+  gv     <- apply(expr_train, 1, var)
+  keep_v <- rownames(expr_train)[gv > var_thresh]
+  if (length(keep_v) < 2) return(character(0))
+  expr_v <- expr_train[keep_v, , drop = FALSE]
+  if (length(unique(event_train)) < 2) return(character(0))
+  design <- model.matrix(~ event_train)
+  fit    <- eBayes(lmFit(expr_v, design))
+  tt     <- topTable(fit, coef = 2, number = Inf,
+                     adjust.method = "BH", sort.by = "p")
+  rownames(tt)[tt$adj.P.Val < pval_thresh]
+}
+
+compute_c <- function(lp, surv_time, surv_event) {
+  tryCatch(
+    concordance.index(
+      x          = lp,
+      surv.time  = surv_time,
+      surv.event = surv_event,
+      method     = "noether"
+    )$c.index,
+    error = function(e) NA_real_
+  )
+}
+
+n_outer_total <- n_outer_repeats * n_outer_folds
+
+c_model2 <- numeric(n_outer_total)
+c_model3 <- numeric(n_outer_total)
+
+fold_log <- vector("list", n_outer_total)
+fit_i    <- 0L
+
+selection_counts_m2 <- integer(0)
+coef_sums_m2        <- numeric(0)
+selection_counts_m3 <- integer(0)
+coef_sums_m3        <- numeric(0)
+
+```
+
+
+```{r}
+#NESTED CV LOOP
+#The namings used are model 2 and 3 here, but in the report it's been changed into model 1 and 2.
+
+for (rep_i in seq_len(n_outer_repeats)) {
+
+  cat("=== Repeat", rep_i, "===\n")
+
+  outer_folds <- make_stratified_folds(
+    df_erpos_endo$ovrallSurvEvent,
+    n_outer_folds,
+    seed = 2000 + rep_i
+  )
+
+  for (k in seq_len(n_outer_folds)) {
+
+    fit_i  <- fit_i + 1L
+    tr_idx <- which(outer_folds != k)
+    te_idx <- which(outer_folds == k)
+
+    train_df   <- df_erpos_endo[tr_idx, ]
+    test_df    <- df_erpos_endo[te_idx, ]
+    train_surv <- Surv(train_df$ovrallSurvDays, train_df$ovrallSurvEvent)
+    expr_tr    <- expr_endo[, tr_idx, drop = FALSE]
+    expr_te    <- expr_endo[, te_idx, drop = FALSE]
+
+    cat("  Fold", k,
+        "| train:", length(tr_idx),
+        "| test:",  length(te_idx), "\n")
+
+    # ── Inner loop: gene selection + lambda tuning ──
+    inner_folds <- make_stratified_folds(
+      train_df$ovrallSurvEvent,
+      n_inner_folds,
+      seed = 5000 + 100 * rep_i + k
+    )
+
+    candidate_genes_inner <- vector("list", n_inner_folds)
+
+    for (ik in seq_len(n_inner_folds)) {
+      itr_idx   <- which(inner_folds != ik)
+      expr_itr  <- expr_tr[, itr_idx, drop = FALSE]
+      event_itr <- train_df$ovrallSurvEvent[itr_idx]
+      candidate_genes_inner[[ik]] <- select_genes_limma(
+        expr_itr, event_itr, var_thresh, pval_thresh
+      )
+    }
+
+    union_genes <- unique(unlist(candidate_genes_inner))
+    union_genes <- union_genes[nchar(union_genes) > 0]
+
+    cat("    Inner union genes:", length(union_genes), "\n")
+
+    if (length(union_genes) < 2) {
+      cat("    Too few genes — skipping M2 and M3\n")
+      c_model2[fit_i] <- NA_real_
+      c_model3[fit_i] <- NA_real_
+      next
+    }
+
+    x_tr_inner <- t(expr_tr[union_genes, , drop = FALSE])
+
+    # ── Inner CV: one cv.glmnet gives both lambda.1se and lambda.min ──
+    cv_inner <- cv.glmnet(
+      x        = x_tr_inner,
+      y        = train_surv,
+      family   = "cox",
+      alpha    = 1,
+      foldid   = inner_folds,
+      cox.ties = "breslow"
+    )
+
+    best_lambda_m2 <- cv_inner$lambda.min   # Model 2
+    best_lambda_m3 <- cv_inner$lambda.min   # Model 3
+
+    # ── Fresh limma on full outer train ──
+    outer_genes <- select_genes_limma(
+      expr_tr, train_df$ovrallSurvEvent,
+      var_thresh, pval_thresh
+    )
+
+    cat("    Outer DGE genes:", length(outer_genes), "\n")
+
+    if (length(outer_genes) < 2) {
+      cat("    Too few outer genes — skipping\n")
+      c_model2[fit_i] <- NA_real_
+      c_model3[fit_i] <- NA_real_
+      next
+    }
+
+    x_tr_outer <- t(expr_tr[outer_genes, , drop = FALSE])
+    x_te_outer <- t(expr_te[outer_genes, , drop = FALSE])
+
+    # =========================================================
+    # MODEL 2 — Gene expression only (LASSO, lambda.min)
+    # =========================================================
+
+    final_m2 <- glmnet(
+      x        = x_tr_outer,
+      y        = train_surv,
+      family   = "cox",
+      alpha    = 1,
+      lambda   = best_lambda_m2,
+      cox.ties = "breslow"
+    )
+
+    cox2_pred <- as.vector(
+      predict(final_m2, newx = x_te_outer,
+              s = best_lambda_m2, type = "link")
+    )
+
+    c2 <- compute_c(cox2_pred,
+                    test_df$ovrallSurvDays,
+                    test_df$ovrallSurvEvent)
+
+    cc2      <- coef(final_m2, s = best_lambda_m2)
+    cc2_vals <- setNames(as.numeric(cc2), rownames(cc2))
+    nz2      <- names(cc2_vals)[cc2_vals != 0]
+
+    cat("    M2 genes:", length(nz2),
+        "| lambda:", round(best_lambda_m2, 4),
+        "| C:", round(c2, 3), "\n")
+
+    for (g in nz2) {
+      prev_n <- if (g %in% names(selection_counts_m2)) selection_counts_m2[[g]] else 0L
+      prev_c <- if (g %in% names(coef_sums_m2))        coef_sums_m2[[g]]        else 0
+      selection_counts_m2[g] <- prev_n + 1L
+      coef_sums_m2[g]        <- prev_c + cc2_vals[g]
+    }
+
+
+    # MODEL 3 — Combined histopath + genes (LASSO, lambda.min)
+    # histopath: penalty = 0 (always in)
+    # genes: penalty = 1 (LASSO)
+
+    train_hist_mat <- model.matrix(
+      ~ nhg + pgr_Status + her2_Status +
+        tumor_size + ageAtDx + lymphNode_binary - 1,
+      data = train_df
+    )
+    test_hist_mat <- model.matrix(
+      ~ nhg + pgr_Status + her2_Status +
+        tumor_size + ageAtDx + lymphNode_binary - 1,
+      data = test_df
+    )
+
+    common_cols    <- intersect(colnames(train_hist_mat),
+                                colnames(test_hist_mat))
+    train_hist_mat <- train_hist_mat[, common_cols, drop = FALSE]
+    test_hist_mat  <- test_hist_mat[,  common_cols, drop = FALSE]
+    n_hist_cols    <- ncol(train_hist_mat)
+
+    x_tr_outer_m3 <- cbind(train_hist_mat, x_tr_outer)
+    x_te_outer_m3 <- cbind(test_hist_mat,  x_te_outer)
+    pen_outer_m3  <- c(rep(0, n_hist_cols),
+                       rep(1, length(outer_genes)))
+
+    final_m3 <- glmnet(
+      x              = x_tr_outer_m3,
+      y              = train_surv,
+      family         = "cox",
+      alpha          = 1,
+      lambda         = best_lambda_m3,
+      penalty.factor = pen_outer_m3,
+      cox.ties       = "breslow"
+    )
+
+    cox3_pred <- as.vector(
+      predict(final_m3, newx = x_te_outer_m3,
+              s = best_lambda_m3, type = "link")
+    )
+
+    c3 <- compute_c(cox3_pred,
+                    test_df$ovrallSurvDays,
+                    test_df$ovrallSurvEvent)
+
+    cc3       <- coef(final_m3, s = best_lambda_m3)
+    cc3_vals  <- setNames(as.numeric(cc3), rownames(cc3))
+    nz3_genes <- names(cc3_vals)[cc3_vals != 0 &
+                                   names(cc3_vals) %in% outer_genes]
+
+    cat("    M3 genes:", length(nz3_genes),
+        "| lambda:", round(best_lambda_m3, 4),
+        "| C:", round(c3, 3), "\n")
+
+    for (g in nz3_genes) {
+      prev_n <- if (g %in% names(selection_counts_m3)) selection_counts_m3[[g]] else 0L
+      prev_c <- if (g %in% names(coef_sums_m3))        coef_sums_m3[[g]]        else 0
+      selection_counts_m3[g] <- prev_n + 1L
+      coef_sums_m3[g]        <- prev_c + cc3_vals[g]
+    }
+
+    # Store
+    c_model2[fit_i] <- c2
+    c_model3[fit_i] <- c3
+
+    fold_log[[fit_i]] <- list(
+      rep        = rep_i,
+      fold       = k,
+      n_union    = length(union_genes),
+      n_outer    = length(outer_genes),
+      n_lasso_m2 = length(nz2),
+      n_lasso_m3 = length(nz3_genes),
+      c_model2   = c2,
+      c_model3   = c3
+    )
+  }
+}
+
+```
+
+
+
+Results
+```{r}
+# RESULTS
+
+cat(sprintf("\n\n=== RESULTS (%d outer fits) ===\n\n", n_outer_total))
+
+cat(sprintf(
+  "Model 2 — Gene expression only (LASSO, lambda.min):\n  Mean C = %.3f (SD = %.3f, range = %.3f - %.3f)\n\n",
+  mean(c_model2, na.rm = TRUE), sd(c_model2, na.rm = TRUE),
+  min(c_model2,  na.rm = TRUE), max(c_model2, na.rm = TRUE)
+))
+
+cat(sprintf(
+  "Model 3 — Combined (LASSO, lambda.min):\n  Mean C = %.3f (SD = %.3f, range = %.3f - %.3f)\n\n",
+  mean(c_model3, na.rm = TRUE), sd(c_model3, na.rm = TRUE),
+  min(c_model3,  na.rm = TRUE), max(c_model3, na.rm = TRUE)
+))
+
+fold_summary <- do.call(rbind, lapply(fold_log, as.data.frame))
+
+cat(sprintf("M2 genes selected: median = %.0f (IQR %.0f-%.0f)\n",
+  median(fold_summary$n_lasso_m2, na.rm = TRUE),
+  quantile(fold_summary$n_lasso_m2, 0.25, na.rm = TRUE),
+  quantile(fold_summary$n_lasso_m2, 0.75, na.rm = TRUE)
+))
+cat(sprintf("M3 genes selected: median = %.0f (IQR %.0f-%.0f)\n\n",
+  median(fold_summary$n_lasso_m3, na.rm = TRUE),
+  quantile(fold_summary$n_lasso_m3, 0.25, na.rm = TRUE),
+  quantile(fold_summary$n_lasso_m3, 0.75, na.rm = TRUE)
+))
+
+
+#PAIRED T-TEST
+
+cat("=== PAIRED T-TEST ===\n\n")
+
+diff   <- c_model3 - c_model2
+ttest  <- t.test(c_model3, c_model2, paired = TRUE)
+
+cat(sprintf(
+  "Model 3 vs Model 2:\n  Mean diff = %+.3f (SD = %.3f), p = %.4f\n\n",
+  mean(diff, na.rm = TRUE),
+  sd(diff,   na.rm = TRUE),
+  ttest$p.value
+))
+
+
+#STABILITY SELECTION
+
+
+stab_thresh <- 0.80
+
+report_stability <- function(sel_counts, coef_sums_vec, label) {
+  if (length(sel_counts) == 0) {
+    cat(label, "— no genes selected\n\n")
+    return(invisible(NULL))
+  }
+  sel_freq <- sort(sel_counts / n_outer_total, decreasing = TRUE)
+  stable   <- names(sel_freq)[sel_freq >= stab_thresh]
+
+  cat(sprintf("%s:\n  Genes selected at least once: %d\n",
+              label, length(sel_freq)))
+  cat(sprintf("  Stable genes (>= 80%%): %d\n\n", length(stable)))
+
+  if (length(stable) > 0) {
+    mean_coef <- coef_sums_vec[stable] / pmax(sel_counts[stable], 1L)
+    sig_df <- data.frame(
+      gene           = stable,
+      selection_freq = round(sel_freq[stable], 3),
+      mean_coef      = round(as.numeric(mean_coef), 4),
+      row.names      = NULL
+    )
+    sig_df <- sig_df[order(-sig_df$selection_freq,
+                            -abs(sig_df$mean_coef)), ]
+    print(sig_df, row.names = FALSE)
+    cat("\n")
+  }
+  invisible(stable)
+}
+
+stable_m2 <- report_stability(selection_counts_m2, coef_sums_m2,
+                               "Model 2 — Gene expression")
+stable_m3 <- report_stability(selection_counts_m3, coef_sums_m3,
+                               "Model 3 — Combined")
+
+
+#BOXPLOT
+
+comparison_df <- data.frame(
+  C_statistic = c(c_model2, c_model3),
+  Model = factor(
+    c(rep("Model 2\nGenes only\n(LASSO)",     n_outer_total),
+      rep("Model 3\nCombined\n(LASSO)",        n_outer_total)),
+    levels = c("Model 2\nGenes only\n(LASSO)",
+               "Model 3\nCombined\n(LASSO)")
+  )
+)
+
+ggplot(comparison_df,
+       aes(x = Model, y = C_statistic, fill = Model)) +
+  geom_boxplot(alpha = 0.7, width = 0.4) +
+  geom_jitter(width = 0.1, size = 2.5, alpha = 0.8) +
+  scale_fill_manual(values = c(
+    "Model 2\nGenes only\n(LASSO)"  = "#F26419",
+    "Model 3\nCombined\n(LASSO)"   = "#57A773"
+  )) +
+  labs(
+    title    = "Cox Nested CV: Model 2 vs Model 3",
+    subtitle = paste0("5 repeats × 5 folds | n=2,512 | ",
+                      "M2: lambda.min | M3: lambda.min"),
+    y        = "C-statistic (Harrell)",
+    x        = ""
+  ) +
+  theme_bw() +
+  theme(legend.position = "none",
+        plot.title      = element_text(face = "bold"))
+
+
+saveRDS(
+  list(
+    c_model2            = c_model2,
+    c_model3            = c_model3,
+    fold_summary        = fold_summary,
+    stable_m2           = stable_m2,
+    stable_m3           = stable_m3,
+    selection_counts_m2 = selection_counts_m2,
+    selection_counts_m3 = selection_counts_m3,
+    coef_sums_m2        = coef_sums_m2,
+    coef_sums_m3        = coef_sums_m3
+  ),
+  "./models/cox_m2_m3_final.rds"
+)
+
+cat("Saved to ./models/cox_m2_m3_final.rds\n")
+
+```
+
+
+
+
+
+```{r}
+#REFITTING, using top 11 genes from the combined model, which appeared in 70% of all 25 folds. 
+
+genes_m3_top11 <- c("B3GNT7", "VAV3", "PCAT18",
+                     "HV592909", "DQ588543", "DQ583069",
+                     "GREB1", "KIRREL3", "NR6A1",
+                     "HIST1H4J", "DQ577476")
+
+
+cat(genes_m3_top11)
+
+x_genes <- as.data.frame(
+  t(expr_endo[genes_m3_top11, , drop = FALSE])
+)
+
+cox3_data <- cbind(
+  df_erpos_endo[, c("ovrallSurvDays", "ovrallSurvEvent",
+                     "nhg", "pgr_Status", "her2_Status",
+                     "tumor_size", "ageAtDx", "lymphNode_binary")],
+  x_genes
+)
+
+surv_all <- Surv(df_erpos_endo$ovrallSurvDays,
+                 df_erpos_endo$ovrallSurvEvent)
+
+cox3_final <- coxph(
+  as.formula(paste(
+    "surv_all ~ nhg + pgr_Status + her2_Status +",
+    "tumor_size + ageAtDx + lymphNode_binary +",
+    paste(paste0("`", genes_m3_top11, "`"), collapse = " + ")
+  )),
+  data = cox3_data,
+  x = TRUE
+)
+
+cat("C:", round(concordance(cox3_final)$concordance, 3), "\n")
+
+risk3 <- predict(cox3_final, type = "lp")
+cuts3 <- quantile(risk3, probs = c(1/3, 2/3))
+tier3 <- cut(risk3, breaks = c(-Inf, cuts3, Inf),
+             labels = c("Low", "Medium", "High"))
+
+print(data.frame(
+  tier = c("Low", "Medium", "High"),
+  n = as.numeric(table(tier3)),
+  death_rate = round(tapply(df_erpos_endo$ovrallSurvEvent,
+                            tier3, mean) * 100, 1)
+))
+
+saveRDS(cox3_final,     "./models/cox3_final.rds")
+saveRDS(cuts3,          "./models/cuts3.rds")
+saveRDS(genes_m3_top11, "./models/stable_genes_m3.rds")
+```
+
+
+
