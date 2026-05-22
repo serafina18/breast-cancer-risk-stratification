@@ -486,15 +486,23 @@ pre code {
 
 # Executive Summary
 
-::: todo
-<strong>Assigned to: Ananda</strong> — Write the executive summary. Suggested structure: background, methodology, key findings, and conclusion.
-:::
+**Background**<br>Histopathological and clinicopathological markers underpin breast cancer treatment decisions but may not fully capture tumour molecular heterogeneity. RNA-seq offers a means to identify patients whose molecular profiles diverge from routine histopathology, indicating potential under-treatment risk.
+
+**Methodology**<br>Using the SCAN-B GSE96058 cohort, gene-expression data were aligned with clinical metadata and evaluated through nested 5-fold cross-validation. Five ablation models compared RNA-seq-only, histopathology-only, and combined approaches.
+
+**Key Findings**<br>RNA-seq alone achieved the highest internal performance (AUC = 0.996 ± 0.001), outperforming histopathology-only modelling (AUC = 0.729 ± 0.039). Combined models did not improve performance over RNA-seq alone.
+
+**Conclusion**<br>The Shiny application provides clinicians with an accessible decision-support tool that uses RNA-seq-informed modelling to stratify patients into risk tiers and flag patients who may warrant further reassessment.
+
 
 # Introduction
 
-::: todo
-<strong>Assigned to: Ananda</strong> — Write the introduction and research question.
-:::
+Breast cancer is the most common malignancy among women worldwide and a major cause of cancer-related mortality, with more than two million new cases diagnosed annually (Sung et al., 2021). For early-stage disease, treatment decisions are typically guided by histopathological and clinicopathological indicators, including tumour grade, estrogen and progesterone receptor (ER/PgR) status, human epidermal growth factor receptor 2 (HER2) status, Ki67, tumour size, and nodal involvement. Although these markers are central to clinical practice, they do not fully capture the molecular heterogeneity of breast cancer, creating uncertainty about whether patients receive an optimal treatment pathway.
+
+RNA sequencing (RNA-seq) provides a complementary view of tumour biology by measuring genome-wide gene expression (Kukurba & Montgomery, 2015). Brueffer et al. (2018) showed that RNA-seq–based multigene classifiers can approach the inherent accuracy of conventional histopathology for biomarker assessment and offer improved prognostic stratification, particularly for hormone-responsive breast cancers. Nonetheless, a translational gap persists between detecting discordance and applying it to guide clinical decision-making.
+
+To address this gap, this project therefore aims to develop a clinically interpretable risk-stratification framework that converts histopathology–RNA-seq discordance into low-, medium-, or high-risk tiers. Using the SCAN-B GSE96058 cohort, the study evaluates whether RNA-seq, integrated with routine histopathology, more effectively identifies patients whose treatment may warrant reassessment to reduce potential under-treatment.
+
 
 # Methodology
 
@@ -742,6 +750,8 @@ Future directions include embedding gene selection within each cross-validation 
 
 Brueffer, C., Vallon-Christersson, J., Grabau, D., et al. (2018). Clinical Value of RNA Sequencing–Based Classifiers for Prediction of the Five Conventional Breast Cancer Biomarkers. *JCO Precision Oncology*, 2, 1–18.
 
+Kukurba, K. R., & Montgomery, S. B. (2015). RNA Sequencing and Analysis. *Cold Spring Harbor protocols, 2015*(11), 951–969. https://doi.org/10.1101/pdb.top084970 
+
 Liaw, A., & Wiener, M. (2002). Classification and Regression by randomForest. *R News*, 2(3), 18–22.
 
 Friedman, J., Hastie, T., & Tibshirani, R. (2010). Regularization Paths for Generalized Linear Models via Coordinate Descent. *Journal of Statistical Software*, 33(1), 1–22.
@@ -749,6 +759,9 @@ Friedman, J., Hastie, T., & Tibshirani, R. (2010). Regularization Paths for Gene
 Robin, X., et al. (2011). pROC: an open-source package for R and S+ to analyze and compare ROC curves. *BMC Bioinformatics*, 12, 77.
 
 Ramos, M., et al. (2017). Software for the Integration of Multiomics Experiments in Bioconductor. *Cancer Research*, 77(21), e39–e42.
+
+Sung, H., Ferlay, J., Siegel, R. L., Laversanne, M., Soerjomataram, I., Jemal, A., & Bray, F. (2021). Global Cancer Statistics 2020: GLOBOCAN Estimates of Incidence and Mortality Worldwide for 36 Cancers in 185 Countries. *CA: a cancer journal for clinicians, 71*(3), 209–249. https://doi.org/10.3322/caac.21660
+
 
 ::: todo
 <strong>Assigned to: Everyone</strong> — Add references for your own sections.
