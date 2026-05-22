@@ -570,7 +570,160 @@ A Shiny web application implements both models for clinical use. **Model 1** acc
 ::: todo
 <strong>Assigned to: Thinh</strong> — Write the evaluation strategy and justification section.
 :::
-
+<p>
+Our evaluation strategy was built around four questions: which genes are
+reliably selected across folds, how well does each model discriminate
+patient survival, whether the differences between models are statistically
+meaningful, and how the final models behave when applied to the full cohort
+for risk stratification.
+</p>
+ 
+<p>
+<strong>Stable gene selection.</strong> Because LASSO is sensitive to the
+specific training samples it sees, the set of genes selected can vary across
+cross-validation folds. To identify a panel that is consistently informative
+rather than fold-specific, we defined a gene as stable if it received a
+non-zero LASSO coefficient in at least 80% of the 25 outer fits (5 repeats
+times 5 folds). This selection frequency threshold is a standard approach to
+stability selection in high-dimensional regression and has been shown to
+substantially reduce false positives compared to single-run LASSO (Meinshausen
+and Buhlmann, 2010). The resulting stable-gene panel was then used for both
+the final deployment refit and to specify the gene inputs required by the
+Shiny application, ensuring that the app only requests genes the model
+consistently needs.
+</p>
+ 
+<p>
+<strong>Discrimination.</strong> The primary evaluation metric was
+Harrell's C-statistic (concordance index), which measures the proportion of
+all evaluable patient pairs in which the model correctly ranks the patient
+who died first as having a higher predicted risk score. A value of 0.5
+indicates no discrimination beyond chance and 1.0 indicates perfect
+discrimination (Harrell et al., 1982). The C-statistic is the natural choice
+here because we are fitting Cox proportional hazards models: it directly
+evaluates what the Cox model is designed to optimise, namely the ranking of
+patients by hazard, rather than imposing a classification threshold that is
+arbitrary in a survival context (Steyerberg et al., 2010).
+</p>
+ 
+<p>
+AUC was computed as a secondary and diagnostic metric only, used to assess
+whether the Cox-LASSO model reproduced the risk rankings of the NSC
+classifier, where a value of 1.0 would mean perfect agreement between the
+two models. It was not used as a primary performance metric. The TP/FN
+concordance labels used in that comparison are derived from er_MGC, which is
+itself a gene-expression-based classifier trained on the same RNA-seq data.
+Using RNA-seq features to predict a label that was created from RNA-seq
+introduces a circularity: the model partially reconstructs a function of its
+own input, which inflates AUC in ways that do not reflect genuine predictive
+accuracy. The C-statistic is evaluated against observed survival times, which
+are independent of the label construction, and is therefore not subject to
+this problem.
+</p>
+ 
+<p>
+<strong>Model comparison.</strong> Per-fold C-statistics were computed across
+all 25 outer iterations and compared between M1, M2, and M3 using paired
+t-tests, with pairing by fold. Pairing is important here because the three
+models see the same data partitions in each fold, which induces correlation
+in their performance estimates. An unpaired test would ignore this structure
+and reduce statistical power. The paired design directly answers whether one
+model consistently outperforms another across the same data splits, rather
+than whether performance differs on average across independent samples.
+</p>
+ 
+<p>
+<strong>Deployment refit and risk stratification.</strong> After nested CV
+evaluation, M1 and M2 were each refit on the complete ER+ endocrine-treated
+cohort (n = 2,450). The linear predictor from each model, which is the log
+hazard score assigned to each patient, was divided into tertiles defined by
+the 33rd and 67th percentiles of the training distribution. This produced
+three groups, Low, Medium, and High risk, of approximately equal size. Tertile
+stratification was chosen because it translates a continuous risk score into
+a format that is actionable in a clinical setting, without requiring
+clinicians to interpret raw hazard values. A three-tier structure also allows
+the tool to identify not only the highest-risk patients but an intermediate
+group that may benefit from more frequent monitoring, which a binary split
+would collapse. The observed death rates within each tier rose monotonically
+for both models, which provides a direct empirical check that the risk
+ordering is meaningful rather than arbitrary.
+</p>
+ 
+<p>
+The resulting models and tier cutpoints are loaded by the Shiny application.
+M1 risk is calculated from the six clinical predictors entered in the
+sidebar. M2 risk is calculated from the 11 stability-selected genes provided
+via CSV upload. Both risk tiers are displayed side by side, and a comparison
+panel flags any disagreement between the two models, which the application
+frames as a signal that may warrant clinical review rather than a definitive
+recommendation.
+</p>
+ 
+<p class="note">
+  Personal note: the C-statistic values we are seeing (around 0.77 for M1
+  and M3, around 0.68 to 0.70 for M2) sit in the range that is commonly
+  described as moderate discrimination in prognostic model literature
+  (Hosmer and Lemeshow, 2000). They are honest numbers that are consistent
+  with what you would expect from clinical-variable-only Cox models in
+  ER-positive breast cancer, and the fact that M2 does not outperform M1
+  is itself an interesting finding worth discussing rather than something
+  to apologise for.
+</p>
+ 
+<!-- Results table -->
+<table>
+  <thead>
+    <tr>
+      <th>Model</th>
+      <th>Features</th>
+      <th>Median C-statistic</th>
+      <th>IQR</th>
+      <th>Range (25 fits)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>M1 — Histopathology and clinical</td>
+      <td>NHG, PgR, HER2, tumour size, age, lymph node</td>
+      <td>0.770</td>
+      <td>0.750 to 0.790</td>
+      <td>0.69 to 0.83</td>
+    </tr>
+    <tr>
+      <td>M2 — Gene expression (Cox-LASSO)</td>
+      <td>11 stability-selected RNA-seq genes</td>
+      <td>0.680</td>
+      <td>0.650 to 0.720</td>
+      <td>0.62 to 0.75</td>
+    </tr>
+    <tr>
+      <td>M3 — Combined (Cox-LASSO, histopath unpenalised)</td>
+      <td>All M1 features plus RNA-seq genes</td>
+      <td>0.770</td>
+      <td>0.750 to 0.790</td>
+      <td>0.70 to 0.83</td>
+    </tr>
+  </tbody>
+</table>
+<p class="caption">
+  Table 1. Cox nested CV C-statistic results. 5 repeats times 5 folds,
+  ER+ endocrine-treated patients (n = 2,450). Limma differential expression
+  applied inside inner folds with variance filter and adj.P below 0.05.
+  IQR estimated from Figure 1 (ablation comparison boxplot).
+</p>
+ 
+<p>
+<strong>References for this section</strong><br>
+Harrell, F. E., Califf, R. M., Pryor, D. B., Lee, K. L., and Rosati, R. A.
+(1982). Evaluating the yield of medical tests. JAMA, 247(18), 2543-2546.<br>
+Hosmer, D. W. and Lemeshow, S. (2000). Applied Logistic Regression (2nd ed.).
+Wiley.<br>
+Meinshausen, N. and Buhlmann, P. (2010). Stability selection. Journal of the
+Royal Statistical Society: Series B, 72(4), 417-473.<br>
+Steyerberg, E. W., Vickers, A. J., Cook, N. R., Gerds, T., Gonen, M.,
+Obuchowski, N., Pencina, M. J., and Kattan, M. W. (2010). Assessing the
+performance of prediction models: a framework for some traditional and novel
+measures. Epidemiology, 21(1), 128-138.
 # Results
 
 ## Ablation Model Comparison
