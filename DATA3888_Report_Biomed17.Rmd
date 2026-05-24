@@ -514,10 +514,17 @@ To address this gap, this project therefore aims to develop a clinically interpr
 :::
 
 ## Data Preprocessing
+*Section author: Nael*
 
-::: todo
-<strong>Assigned to: Nael</strong> — Write the data preprocessing section.
-:::
+The analysis began with acquisition of the GSE96058 dataset, which contains breast cancer gene-expression data and associated clinical/sample metadata. The expression sub-matrices were first combined into one complete expression matrix, and the sample metadata were loaded separately so that molecular and clinical information could be processed in parallel before being merged for modelling.
+
+After data collection, the dataset was cleaned to ensure that only valid and comparable patient records were retained. Replicate samples were removed so that each patient contributed only one observation to the final analysis. Survival-related clinical variables were then derived from the metadata, including the outcome status and follow-up time required for Cox proportional hazards modelling. Missing clinical values were imputed where appropriate to reduce information loss, while still preserving the structure of the original cohort. The expression matrix was then aligned with the metadata so that each row in the clinical dataset matched the correct sample in the gene-expression dataset.
+
+Once the cleaned clinical and gene-expression data were aligned, a stratified 5-fold outer cross-validation split was created. Stratification was used to preserve the distribution of survival outcomes across folds, reducing the risk that any training or testing fold would be unrepresentative. In each outer fold, 80% of the data was used for training and 20% was held out for testing. This outer test set was not used during feature selection or model tuning, which helped provide a less biased estimate of final model performance.
+
+Within each outer training set, an inner 5-fold cross-validation procedure was applied for models using gene-expression predictors. For the gene-expression models, supervised gene selection was conducted inside the inner loop using a variance filter followed by differential expression screening with limma, retaining genes with adjusted significance criteria. The significant genes identified across the inner folds were then combined into a union gene set. LASSO regularisation was applied to this union set to reduce dimensionality further and select the most predictive genes while limiting overfitting.
+
+After all outer folds were completed, the C-statistics were aggregated to compare the predictive performance of the modelling approaches. Gene-selection stability was also assessed by identifying genes that were selected in at least 80% of model fits. These stable genes were then used in the final Cox proportional hazards model, which was fitted using all eligible patients. Based on the final model, patients were assigned predicted risk scores and grouped into tertile-based risk categories. These final risk cut-offs formed the basis of the final risk analysis tool.
 
 ## Data Modelling
 *Section author: Gary (Guanyu Chen)*
@@ -554,10 +561,27 @@ Across all 25 outer fits, we tracked which genes were selected by LASSO (non-zer
 A Shiny web application implements Model 2 (combined) for clinical use. Users input six histopathological variables and upload a CSV of gene expression values for the 11 stability-selected genes. The app computes a Cox risk score and assigns patients to a risk tier (Low / Medium / High) based on tertile cutoffs derived from the training cohort.
 
 ## Evaluation Strategy & Justification
+*Section author: Thinh*
 
-::: todo
-<strong>Assigned to: Thinh</strong> — Write the evaluation strategy and justification section.
-:::
+Our evaluation strategy was built around four questions: which genes are reliably selected across folds, how well does each model discriminate patient survival, whether the differences between models are statistically meaningful, and how the final models behave when applied to the full cohort for risk stratification.
+
+**Stable gene selection.** Because LASSO is sensitive to the specific training samples it sees, the set of genes selected can vary across cross-validation folds. To identify a panel that is consistently informative rather than fold-specific, we defined a gene as stable if it received a non-zero LASSO coefficient in at least 80% of the 25 outer fits (5 repeats times 5 folds). This selection frequency threshold is a standard approach to stability selection in high-dimensional regression and has been shown to substantially reduce false positives compared to single-run LASSO (Meinshausen and Buhlmann, 2010). The resulting stable-gene panel was then used for both the final deployment refit and to specify the gene inputs required by the Shiny application, ensuring that the app only requests genes the model consistently needs.
+
+**Discrimination.** The primary evaluation metric was Harrell's C-statistic (concordance index), which measures the proportion of all evaluable patient pairs in which the model correctly ranks the patient who died first as having a higher predicted risk score. A value of 0.5 indicates no discrimination beyond chance and 1.0 indicates perfect discrimination (Harrell et al., 1982). The C-statistic is the natural choice here because we are fitting Cox proportional hazards models: it directly evaluates what the Cox model is designed to optimise, namely the ranking of patients by hazard, rather than imposing a classification threshold that is arbitrary in a survival context (Steyerberg et al., 2010).
+
+**Model comparison.** Per-fold C-statistics were computed across all 25 outer iterations and compared between models using paired t-tests, with pairing by fold. Pairing is important here because models see the same data partitions in each fold, which induces correlation in their performance estimates. An unpaired test would ignore this structure and reduce statistical power. The paired design directly answers whether one model consistently outperforms another across the same data splits, rather than whether performance differs on average across independent samples.
+
+**Deployment refit and risk stratification.** After nested CV evaluation, the final model was refit on the complete ER+ endocrine-treated cohort. The linear predictor from the model, which is the log hazard score assigned to each patient, was divided into tertiles defined by the 33rd and 67th percentiles of the training distribution. This produced three groups — Low, Medium, and High risk — of approximately equal size. Tertile stratification was chosen because it translates a continuous risk score into a format that is actionable in a clinical setting, without requiring clinicians to interpret raw hazard values. A three-tier structure also allows the tool to identify not only the highest-risk patients but an intermediate group that may benefit from more frequent monitoring, which a binary split would collapse. The observed death rates within each tier rose monotonically, which provides a direct empirical check that the risk ordering is meaningful rather than arbitrary.
+
+The resulting model and tier cutpoints are loaded by the Shiny application. Risk is calculated from the six clinical predictors and 11 stability-selected genes. The application displays the risk tier assignment and flags cases where the model indicates elevated risk that may warrant clinical review.
+
+**References for this section**
+
+Harrell, F. E., Califf, R. M., Pryor, D. B., Lee, K. L., and Rosati, R. A. (1982). Evaluating the yield of medical tests. *JAMA*, 247(18), 2543–2546.
+
+Meinshausen, N. and Buhlmann, P. (2010). Stability selection. *Journal of the Royal Statistical Society: Series B*, 72(4), 417–473.
+
+Steyerberg, E. W., Vickers, A. J., Cook, N. R., Gerds, T., Gonen, M., Obuchowski, N., Pencina, M. J., and Kattan, M. W. (2010). Assessing the performance of prediction models: a framework for some traditional and novel measures. *Epidemiology*, 21(1), 128–138.
 
 # Results
 
