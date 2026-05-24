@@ -485,14 +485,15 @@ pre code {
 ```
 
 # Executive Summary
+*Section author: Ananda Maheswari*
 
 **Background**<br>Histopathological and clinicopathological markers underpin breast cancer treatment decisions but may not fully capture tumour molecular heterogeneity. RNA-seq offers a means to identify patients whose molecular profiles diverge from routine histopathology, indicating potential under-treatment risk.
 
-**Methodology**<br>Using the SCAN-B GSE96058 cohort, gene-expression data were aligned with clinical metadata and evaluated through nested 5-fold cross-validation. Five ablation models compared RNA-seq-only, histopathology-only, and combined approaches.
+**Methodology**<br>Using the SCAN-B GSE96058 cohort (n = 2,512 ER-positive, endocrine-treated patients), two Cox proportional hazards models were compared under nested cross-validation (5 repeats × 5 folds): a gene-expression-only LASSO-Cox model (Model 1) and a combined model incorporating both gene expression and histopathological variables (Model 2).
 
-**Key Findings**<br>RNA-seq alone achieved the highest internal performance (AUC = 0.996 ± 0.001), outperforming histopathology-only modelling (AUC = 0.729 ± 0.039). Combined models did not improve performance over RNA-seq alone.
+**Key Findings**<br>The combined model (Model 2, C-statistic = 0.766) significantly outperformed the gene-expression-only model (Model 1, C-statistic = 0.698, p < 0.0001), demonstrating that histopathological variables provide complementary prognostic value. Stability selection identified 11 genes for the final deployed model, which stratified patients into risk tiers with markedly different mortality rates (Low: 1.2%, Medium: 4.9%, High: 20.2%).
 
-**Conclusion**<br>The Shiny application provides clinicians with an accessible decision-support tool that uses RNA-seq-informed modelling to stratify patients into risk tiers and flag patients who may warrant further reassessment.
+**Conclusion**<br>The Shiny application provides clinicians with an accessible decision-support tool that combines RNA-seq and histopathology data to stratify patients into risk tiers and flag those who may warrant further reassessment.
 
 
 # Introduction
@@ -519,38 +520,38 @@ To address this gap, this project therefore aims to develop a clinically interpr
 :::
 
 ## Data Modelling
+*Section author: Gary (Guanyu Chen)*
 
-To systematically assess the contribution of each data modality, we designed five ablation models evaluated under a unified nested cross-validation framework:
+To assess whether combining histopathology and gene expression improves survival-based risk stratification, we designed two Cox proportional hazards models evaluated under a nested cross-validation framework. The study population comprised ER-positive, endocrine-treated patients from the SCAN-B cohort (GSE96058, n = 2,512).
 
 ::: model-overview
 | Model | Features | Algorithm | Rationale |
 |:---|:---|:---|:---|
-| M1 | \~10,000 genes (var \> 0.5) | Random Forest | RNA-seq only baseline |
-| M2 | 5 clinical variables | Logistic Regression | Histopathology only baseline |
-| M3 | Top 50 genes + 5 clinical | Random Forest | Combined (same algorithm as M1) |
-| M4 | Top 50 genes + 5 clinical | Ridge Logistic Regression | Combined (regularised LR) |
-| M5 | Top 50 genes + 5 clinical | Plain Logistic Regression | Combined (unregularised baseline) |
+| Model 1 | Limma-selected genes | Cox PH with LASSO (`glmnet`, alpha = 1) | Gene expression only |
+| Model 2 | Clinical + limma-selected genes | Cox PH with LASSO (clinical unpenalised) | Combined modalities |
 :::
 
-All models were evaluated using **5-fold outer × 5-fold inner nested cross-validation**. The outer loop provides unbiased generalisation estimates; the inner loop tunes hyperparameters and optimises the classification threshold. All five models share identical outer folds (seed = 42), enabling paired ablation comparison.
+The outcome was overall survival (time = `ovrallSurvDays`, event = `ovrallSurvEvent`). Model performance was evaluated using Harrell's C-statistic (concordance index), which measures how well predicted risk scores rank patients by survival time.
 
-**Hyperparameter tuning.** M1 tuned `mtry` over {50, 100, 200, 300, 500}; M3 tuned `mtry` over {2, 3, 5, 7, 10, 15}; M4 selected Ridge `lambda` via `cv.glmnet` (alpha = 0). M2 and M5 have no tunable hyperparameters.
+### Nested Cross-Validation
 
-**Class imbalance.** RF models used balanced `sampsize` (equal TP and FN per tree, computed dynamically per inner fold). LR models used inverse-frequency class weights: $w_i = N / (2 \times N_{\text{class}})$.
+All models were evaluated using **5 repeats × 5-fold outer × 5-fold inner nested cross-validation** (25 outer fits total), stratified by event status. The outer loop provides unbiased generalisation estimates; the inner loop is used for gene selection and regularisation parameter tuning. Both models share identical outer folds, enabling paired comparison.
 
-**Threshold optimisation.** The Youden index (maximising Sensitivity + Specificity − 1) was applied to concatenated inner-fold predictions. The resulting threshold was applied unchanged to the outer test fold.
+For each outer fold:
 
-**Gene selection.** The top 50 genes were ranked by Mean Decrease Gini from a Random Forest trained on the full dataset (all 2,648 samples). Ranking on the entire dataset before cross-validation constitutes mild feature-selection leakage: the selected genes are informed by the outcome labels of samples that later appear in outer test folds. However, because Random Forest feature importance with 10,000 noisy predictors is primarily driven by signal rather than noise — and because the top 50 genes are individually validated in TCGA-BRCA (43/50 matched, external AUC 0.783) — the leakage is unlikely to materially inflate our internal estimates. We flag this as a limitation where future work could employ fully nested gene selection (Section 5).
+1. **Supervised gene selection (both models):** Within each inner fold, a two-step filter was applied to the inner training patients only: (a) a variance filter (variance > 0.5) to remove low-signal genes, and (b) limma differential gene expression analysis (dead vs alive contrast, BH-adjusted p < 0.05) to retain survival-associated genes. The **union** of significant genes across all five inner folds formed the candidate gene set for that outer fold. The union approach was chosen over intersection to maximise coverage of potentially informative genes, as intersection would be overly conservative and exclude genes that are marginally significant in one fold but strongly predictive in others.
 
-### External Validation — TCGA-BRCA
+2. **Regularisation:** `cv.glmnet` with `family = "cox"` and `alpha = 1` (LASSO) was fitted using the inner fold assignments (`foldid`) to select the optimal `lambda` at `lambda.min` (minimising cross-validated error). For Model 2, six clinical variables (NHG grade, PgR status, HER2 status, tumour size, age at diagnosis, and lymph node status) were included with `penalty.factor = 0` (unpenalised) so that LASSO shrinkage applied only to gene coefficients.
 
-We applied the model to the TCGA-BRCA dataset (accessed via `curatedTCGAData`). Of the top 50 genes, 43 had matching symbols in TCGA. A Random Forest was retrained on all 2,648 SCAN-B samples using only these 43 genes (OOB error = 3.4%).
+3. **Refit and predict:** The LASSO model was refitted on the full outer training set using the inner-CV-selected `lambda`, then evaluated on the held-out outer test fold via C-statistic.
 
-The model was applied to 806 TCGA ER+ patients. With only 14 discordant cases (IHC ER+ and PAM50 Basal-like), we compared predicted probability distributions between groups using the Wilcoxon rank-sum test, ROC AUC with DeLong 95% CI, and Cliff's delta effect size.
+### Stability Selection
+
+Across all 25 outer fits, we tracked which genes were selected by LASSO (non-zero coefficient). At the 80% threshold, Model 1 identified 15 stable genes, while Model 2 identified only 3. For the final deployed model, the threshold was relaxed to 70% on Model 2 results, yielding **11 stable genes**. This threshold balances model parsimony with feature stability, retaining genes consistently selected across the majority of training configurations.
 
 ### Shiny Risk Calculator
 
-A Shiny web application loads the 43-gene RF model and accepts uploaded gene expression data or pre-loaded example patients. It outputs a discordance risk score and tier (Low / Medium / High). Clinical variables are displayed for context only and do not influence the prediction, consistent with the ablation finding.
+A Shiny web application implements Model 2 (combined) for clinical use. Users input six histopathological variables and upload a CSV of gene expression values for the 11 stability-selected genes. The app computes a Cox risk score and assigns patients to a risk tier (Low / Medium / High) based on tertile cutoffs derived from the training cohort.
 
 ## Evaluation Strategy & Justification
 
@@ -651,63 +652,14 @@ Patients were stratified into three risk tiers (Low, Medium, High) based on the 
 | Medium | 837 | 4.9% |
 | High | 837 | 20.2% |
 
-```{r fig-ablation, fig.cap="Figure 2: Nested cross-validation AUC for five ablation models. Error bars = ± 1 SD across 5 outer folds."}
-library(ggplot2)
-auc_data <- data.frame(
-  Model = c("M1: RNA-seq RF", "M2: Histopath LR", "M3: Combined RF",
-            "M4: Combined Ridge", "M5: Combined Plain LR"),
-  AUC = c(0.996, 0.729, 0.995, 0.995, 0.984),
-  SD = c(0.001, 0.039, 0.002, 0.002, 0.017),
-  Modality = c("RNA-seq", "Histopathology", "Combined", "Combined", "Combined")
-)
-auc_data$Model <- factor(auc_data$Model, levels = rev(auc_data$Model))
-ggplot(auc_data, aes(x = Model, y = AUC, fill = Modality)) +
-  geom_col(width = 0.62) +
-  geom_errorbar(aes(ymin = AUC - SD, ymax = pmin(AUC + SD, 1)),
-                width = 0.18, linewidth = 0.35) +
-  geom_text(aes(label = sprintf("%.3f", AUC)), hjust = -0.18, size = 4.2) +
-  coord_flip() +
-  scale_fill_manual(values = c("Combined" = "#5a86a6",
-                               "Histopathology" = "#d8913f",
-                               "RNA-seq" = "#5a5f73")) +
-  scale_y_continuous(limits = c(0, 1.08), breaks = seq(0, 1, 0.2)) +
-  labs(x = NULL, y = "AUC (mean ± SD)", fill = NULL) +
-  theme_minimal(base_size = 14) +
-  theme(
-    legend.position = "top",
-    legend.key.size = unit(0.7, "lines"),
-    panel.grid.major.y = element_blank(),
-    panel.grid.minor = element_blank(),
-    plot.margin = margin(12, 28, 8, 8),
-    plot.background = element_rect(fill = "#fdfdfd", color = NA),
-    panel.background = element_rect(fill = "#fdfdfd", color = NA),
-    axis.text = element_text(color = "#333333"),
-    axis.text.y = element_text(color = "#222222")
-  )
-```
-
-RNA-seq alone (M1) achieved AUC 0.996 ± 0.001 with sensitivity 0.976 and specificity 0.965, substantially outperforming histopathology only (M2: AUC 0.729 ± 0.039, sensitivity 0.591, specificity 0.737). Combined models matched but did not exceed M1 (Figure 2; full metrics in Table S1).
-
-Among combined models, M3 (RF) and M4 (Ridge LR, each AUC 0.995) performed equivalently, while M5 (Plain LR, AUC 0.984 ± 0.017) showed higher variance and a modest decline. In the high-dimensional, correlated gene-expression setting, unregularised logistic regression is ill-conditioned: coefficients are unstable and overfit to noise, inflating variance across folds. The regularisation in M4 (Ridge) and the ensemble averaging in M3 (RF) suppress this noise.
-
-The key finding is that gene expression captures the full discriminative signal for ER discordance; adding clinical variables yields no incremental predictive benefit. This is corroborated by feature importance: all five clinical variables ranked last in the Combined RF model.
-
-## External Validation — TCGA-BRCA
-
-```{r fig-tcga, fig.cap="Figure 3: TCGA-BRCA external validation results."}
-# Uncomment when figure is ready:
-# knitr::include_graphics("tcga_validation_figure.png")
-```
-
-The 43-gene panel significantly separated discordant (n = 14, mean prob = 0.022) from concordant (n = 353, mean prob = 0.0001) TCGA patients (Wilcoxon p \< 10⁻⁶, Cliff's delta = 0.566). External AUC = 0.783 (95% CI: 0.647–0.919), a drop of 0.212 from internal — consistent with cross-platform degradation. Discrimination transfers; calibration does not.
-
 ## Survival Analysis
+*Section author: Serafina Aurelia*
 
 ::: todo
-<strong>Assigned to: Serafina</strong> — Add survival analysis results.
+<strong>Assigned to: Serafina</strong> — Add Kaplan-Meier curves and hazard ratios from the final Cox model risk tiers.
 :::
 
-```{r fig-survival, fig.cap="Figure 4: Kaplan-Meier survival curves for ER discordant vs concordant patients."}
+```{r fig-survival, fig.cap="Figure 3: Kaplan-Meier survival curves by risk tier."}
 # Uncomment when Serafina provides figure:
 # knitr::include_graphics("km_survival_curve.png")
 ```
@@ -715,36 +667,40 @@ The 43-gene panel significantly separated discordant (n = 14, mean prob = 0.022)
 # Discussion and Conclusion
 
 ## Key Findings
+*Section author: Gary (Guanyu Chen)*
 
-This study asked whether combining histopathology and RNA-seq improves risk stratification for ER-discordant breast cancer patients. The ablation analysis provides a clear answer: **RNA-seq alone achieves near-perfect discrimination (AUC = 0.996), and adding clinical variables provides no improvement** (Combined AUC = 0.995). A compact 43-gene panel is sufficient to identify patients whose tumours may be molecularly ER-negative despite an IHC ER+ classification — patients who are potentially under-treated with endocrine therapy alone.
+This study asked whether combining histopathology and RNA-seq improves survival-based risk stratification for ER-positive, endocrine-treated breast cancer patients. Two Cox proportional hazards models were compared under nested cross-validation (5 repeats × 5 folds): gene expression with LASSO (Model 1) and combined histopathology + gene expression with LASSO (Model 2, clinical unpenalised).
 
-External validation on TCGA-BRCA confirmed that the biological signal captured by this panel transfers across sequencing platforms (SCAN-B FPKM vs TCGA RSEM) and populations (Swedish vs American cohorts), with an external AUC of 0.783. The drop from internal performance is consistent with expected cross-platform degradation rather than overfitting, and the Wilcoxon test (p \< 10⁻⁶) confirms that the model's ranking ability is robust.
+Model 2 (Combined, C-statistic = 0.766 ± 0.037) significantly outperformed Model 1 (Gene only, C-statistic = 0.698 ± 0.044) with a mean difference of +0.069 (paired t-test p < 0.0001). This demonstrates that histopathological variables provide complementary prognostic information beyond what gene expression captures alone, directly answering our research question in the affirmative.
 
-::: todo
-<strong>Assigned to: Serafina</strong> — Add one paragraph on survival analysis implications: do discordant patients have worse outcomes? How does this support the clinical relevance of detecting ER discordance?
-:::
+Stability selection across 25 outer fits identified 11 genes at the 70% threshold for Model 2, providing a compact and interpretable gene signature. Five genes (VAV3, SUSD4, GREB1, KIRREL3, PCAT18) appeared consistently across both models, suggesting they capture genuine survival signal independent of clinical covariates. Notably, GREB1 is a well-established estrogen receptor signalling gene, providing biological validation of the signature.
+
+The final deployed model, refitted on all 2,512 patients using the 11 stability-selected genes and 6 clinical variables, achieved a C-statistic of 0.818 and stratified patients into risk tiers with markedly different mortality rates (Low: 1.2%, Medium: 4.9%, High: 20.2%).
 
 ## Limitations
+*Section author: Gary (Guanyu Chen)*
 
-1.  **Feature selection leakage.** The top 50 genes were selected on the full dataset before cross-validation. The selected features are therefore informed by outcome labels of samples that later appear in test folds. Future work should embed gene selection within each outer fold.
-2.  **Prediction target circularity.** The er_MGC label is itself derived from RNA-seq data, which partially explains the high internal AUC — the model learns to reconstruct a function of its own input features.
-3.  **Limited external discordant cases.** Only 14 TCGA patients met the discordant criterion (IHC ER+ and PAM50 Basal-like), yielding a wide confidence interval on external AUC (0.647–0.919).
-4.  **Population specificity.** The model was trained exclusively on the SCAN-B Swedish cohort and may not generalise to populations with different demographics or tumour biology.
-5.  **Calibration failure.** Absolute predicted probabilities do not transfer cross-platform (maximum 0.082 in TCGA vs near 1.0 in SCAN-B); only relative ranking is validated.
-6.  **Ki67 exclusion.** Ki67 status was excluded due to 54.8% missingness in SCAN-B, limiting the clinical feature set available for the histopathology-only model.
+1. **Study population.** The model was trained exclusively on ER-positive, endocrine-treated patients from the SCAN-B Swedish cohort and may not generalise to ER-negative subtypes, other treatment regimens, or populations with different demographics.
+2. **Gene selection stability.** While stability selection mitigates overfitting, the relaxation from the 80% to 70% threshold for Model 2 means the final gene set includes features with moderate but not strong selection frequency. External validation would strengthen confidence.
+3. **Missing data imputation.** Clinical variables with missing values (e.g., lymph node status, PgR) were imputed with mode or median values, which may introduce bias.
+4. **Ki67 exclusion.** Ki67 status was excluded due to 54.8% missingness in SCAN-B, limiting the clinical feature set.
+5. **Single outcome.** Only overall survival was modelled; disease-free survival or breast-cancer-specific survival may yield different results.
+6. **No external validation.** The current pipeline does not include external validation on an independent cohort (e.g., TCGA-BRCA or METABRIC), which would be needed before clinical deployment.
+7. **lambda.min vs lambda.1se.** The use of `lambda.min` rather than `lambda.1se` selects more features and may slightly increase overfitting risk, though nested CV mitigates this.
 
 ## Future Work
+*Section author: Gary (Guanyu Chen)*
 
-Future directions include embedding gene selection within each cross-validation fold to eliminate feature selection leakage, applying probability calibration (Platt scaling or isotonic regression) for clinical deployment, and validating on additional independent cohorts with matched IHC and RNA-seq data.
+Future directions include external validation of the 11-gene Cox signature on TCGA-BRCA or METABRIC cohorts, incorporating disease-free survival as an alternative endpoint, and comparing the LASSO-Cox approach with Random Survival Forest models. Probability calibration for clinical deployment and a prospective validation study would further support translation to clinical practice.
 
 # Student Contributions
 
--   **Gary (Guanyu Chen)**: Random Forest classification pipeline, nested cross-validation ablation study, TCGA-BRCA external validation, report Methodology (Data Modelling) and Results sections, Discussion (Key Findings, Limitations, Future Work).
--   **Serafina Aurelia**: Cox proportional hazards survival models, LASSO-Cox pipeline, Kaplan-Meier survival analysis, report Survival Analysis sections and Discussion (survival implications).
--   **Kush**: LASSO logistic regression (114-gene selection), limma differential expression analysis, GSE96058 R data package, workflow diagram (Figure 1).
+-   **Gary (Guanyu Chen)**: Report Methodology (Data Modelling) section, Discussion (Key Findings, Limitations, Future Work), report formatting and structure.
+-   **Serafina Aurelia**: Cox-LASSO nested cross-validation implementation, stability selection, Shiny risk calculator, survival analysis results, report Results section.
+-   **Kush**: LASSO gene selection pipeline, limma differential expression, GSE96058 R data package, workflow diagram (Figure 1), nested CV framework design, Random Survival Forest comparison.
 -   **Thinh**: SVM-RBF (svmRadial, e1071) classification pipeline, exploratory data analysis, data preprocessing pipeline, report Evaluation Strategy & Justification section.
 -   **Ananda Maheswari**: Exploratory data analysis, clinical variable selection, report Executive Summary and Introduction.
--   **Nael**: Data preprocessing documentation, report Data Preprocessing section, formatting.
+-   **Nael**: Data preprocessing documentation, report Data Preprocessing section, presentation slides formatting.
 
 # References
 
@@ -776,16 +732,12 @@ Sung, H., Ferlay, J., Siegel, R. L., Laversanne, M., Soerjomataram, I., Jemal, A
 
 ```{r}
 ncv_table <- data.frame(
-  Model = c("M1: RNA-seq RF", "M2: Histopath LR", "M3: Combined RF",
-            "M4: Combined Ridge", "M5: Combined Plain LR"),
-  Features = c("~10K genes", "5 clinical", "Top 50 + 5", "Top 50 + 5", "Top 50 + 5"),
-  AUC = c("0.996 ± 0.001", "0.729 ± 0.039", "0.995 ± 0.002",
-          "0.995 ± 0.002", "0.984 ± 0.017"),
-  Sens = c("0.976 ± 0.040", "0.591 ± 0.082", "0.964 ± 0.048",
-           "0.971 ± 0.047", "0.941 ± 0.071"),
-  Spec = c("0.965 ± 0.022", "0.737 ± 0.051", "0.963 ± 0.020",
-           "0.966 ± 0.024", "0.951 ± 0.043")
+  Model = c("Model 1: Gene expression (LASSO Cox)", 
+            "Model 2: Combined (LASSO Cox)"),
+  Features = c("15 stable genes (80%)", "11 stable genes (70%)"),
+  C_statistic = c("0.698 ± 0.044", "0.766 ± 0.037"),
+  Range = c("0.623–0.775", "0.678–0.829")
 )
-knitr::kable(ncv_table, caption = "Table S1: Full nested CV results (mean ± SD, 5 outer folds).",
-             align = c("l","l","r","r","r"))
+knitr::kable(ncv_table, caption = "Table S1: Nested CV C-statistic summary (5 repeats × 5 outer folds = 25 fits).",
+             align = c("l","l","r","r"))
 ```
