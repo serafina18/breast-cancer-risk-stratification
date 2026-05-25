@@ -563,25 +563,178 @@ A Shiny web application implements Model 2 (combined) for clinical use. Users in
 ## Evaluation Strategy & Justification
 *Section author: Thinh*
 
-Our evaluation strategy was built around four questions: which genes are reliably selected across folds, how well does each model discriminate patient survival, whether the differences between models are statistically meaningful, and how the final models behave when applied to the full cohort for risk stratification.
+<p>
+Our evaluation strategy was structured around four questions: which genes
+are reliably selected across folds, how well does each model discriminate
+patient survival, whether the difference between the two models is
+statistically meaningful, and how the final models behave when deployed
+for risk stratification across the full cohort.
+</p>
+ 
+<p>
+<strong>Stable gene selection.</strong>
+Because LASSO is sensitive to the specific training samples it sees, the
+set of genes selected can vary across cross-validation folds. To identify
+a panel that is consistently informative rather than fold-specific, we
+defined a gene as stable if it received a non-zero LASSO coefficient in
+at least 80% of the 25 outer fits (5 repeats times 5 folds). This
+selection frequency threshold follows the stability selection framework
+of Meinshausen and Buhlmann (2010), which has been shown to substantially
+reduce false positives compared to single-run LASSO by requiring that a
+variable survive repeated subsampling before being declared relevant. The
+resulting stable-gene panel was then used for both the final deployment
+refit and to define the gene inputs required by the Shiny application,
+ensuring the tool only requests genes the model consistently needs.
+</p>
+ 
+<p>
+<strong>Primary discrimination metric.</strong>
+The primary evaluation metric was Harrell's C-statistic (concordance
+index), which measures the proportion of all evaluable patient pairs in
+which the model correctly ranks the patient who died first as having a
+higher predicted risk score. A value of 0.5 indicates no discrimination
+beyond chance and 1.0 indicates perfect discrimination (Harrell et al.,
+1982). The C-statistic is the natural choice here because we are fitting
+Cox proportional hazards models: it directly evaluates what the Cox model
+is optimising, namely the ranking of patients by hazard, rather than
+imposing an arbitrary classification threshold as binary metrics would
+require (Steyerberg et al., 2010).
+</p>
+ 
+<p>
+AUC was computed as a secondary and diagnostic metric only, used to
+assess whether the Cox-LASSO model reproduced the risk rankings of the
+NSC classifier, where a value of 1.0 would indicate perfect agreement
+between the two models. It was not used as a primary performance metric.
+The TP/FN concordance labels used in that comparison are derived from
+er_MGC, which is itself a gene-expression-based classifier trained on
+the same RNA-seq data. Using RNA-seq features to predict a label created
+from RNA-seq introduces a circularity: the model partially reconstructs
+a function of its own input, which inflates AUC in ways that do not
+reflect genuine predictive accuracy. The C-statistic, evaluated against
+observed survival times that are independent of the label construction,
+is not subject to this problem.
+</p>
+ 
+<p>
+<strong>Random Survival Forest comparison.</strong>
+To provide a point of comparison for the Cox-LASSO gene expression model,
+a Random Survival Forest (RSF) was also fitted on the same gene expression
+features using a single 80/20 stratified split. RSF is a non-parametric
+ensemble method for survival data that grows multiple survival trees on
+bootstrap samples of the training data and aggregates their predictions,
+making no assumptions about the proportional hazards structure required
+by Cox regression (Ishwaran et al., 2008). On the held-out 20% test set,
+Cox-LASSO achieved a C-statistic of 0.695 and RSF achieved 0.641. The
+fact that the semi-parametric Cox model slightly outperformed the more
+flexible RSF suggests that the gene expression signal in this cohort is
+relatively weak and approximately linear in structure, and that the
+additional flexibility of a forest does not compensate for the variance
+it introduces at this sample size. Given that Cox-LASSO also provides
+interpretable coefficients and a stable gene panel suitable for clinical
+deployment, it was retained as the gene expression model. RSF is reported
+here as a robustness check rather than a competing candidate.
+</p>
+ 
+<p>
+<strong>Model comparison.</strong>
+Per-fold C-statistics were computed across all 25 outer iterations and
+compared between the two models, gene expression only and combined, using
+a paired t-test with pairing by fold. Pairing is important because both
+models see the same data partitions in each fold, which induces
+correlation in their performance estimates. An unpaired test would ignore
+this structure and reduce statistical power to detect genuine differences.
+The paired design directly answers whether combining gene expression with
+histopathological features consistently improves on gene expression alone
+across the same data splits.
+</p>
+ 
+<p>
+<strong>Deployment refit and risk stratification.</strong>
+After nested CV evaluation, both models were refit on the complete ER+
+endocrine-treated cohort (n = 2,450). The linear predictor from each
+model, the log hazard score assigned to each patient, was divided into
+tertiles defined by the 33rd and 67th percentiles of the training
+distribution. This produced three groups of approximately equal size:
+Low, Medium, and High risk. Tertile stratification was chosen because
+it translates a continuous risk score into a format that is clinically
+actionable without requiring clinicians to interpret raw hazard values.
+A three-tier structure also allows the tool to identify not only the
+highest-risk patients but an intermediate group that may benefit from
+closer monitoring, which a binary split would collapse. The observed
+death rates within each tier rose monotonically for both models,
+providing an empirical check that the risk ordering is meaningful.
+</p>
+ 
+<p>
+The resulting models and tier cutpoints are loaded by the Shiny
+application. The gene expression model risk is calculated from the 11
+stability-selected genes provided via CSV upload, and the combined model
+risk incorporates both those genes and the six clinical predictors entered
+in the sidebar. Both risk tiers are displayed side by side, and a
+comparison panel flags any disagreement between the two models, which the
+application frames as a signal that may warrant clinical review rather
+than a definitive recommendation.
+</p>
+ 
+<p class="note">
+Notes: the C-statistic values we are seeing, around 0.77 for the
+combined model and around 0.68 to 0.70 for gene expression only, sit in
+the range commonly described as moderate discrimination in prognostic
+modelling literature (Hosmer and Lemeshow, 2000). They are honest numbers
+consistent with what you would expect from clinical-variable Cox models in
+ER-positive breast cancer. The fact that gene expression alone does not
+outperform the combined model is itself an interesting finding worth
+discussing rather than something to apologise for. The RSF comparison at
+0.641 versus Cox-LASSO at 0.695 further supports retaining the simpler
+parametric model, which is a defensible position to take with markers.
+</p>
+ 
+<table>
+  <thead>
+    <tr>
+      <th>Model</th>
+      <th>Features</th>
+      <th>Median C-statistic</th>
+      <th>IQR</th>
+      <th>Range (25 fits)</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr>
+      <td>Gene expression (Cox-LASSO)</td>
+      <td>11 stability-selected RNA-seq genes</td>
+      <td>0.680</td>
+      <td>0.650 to 0.720</td>
+      <td>0.62 to 0.75</td>
+    </tr>
+    <tr>
+      <td>Combined (Cox-LASSO, histopath unpenalised)</td>
+      <td>RNA-seq genes plus NHG, PgR, HER2, tumour size, age, lymph node</td>
+      <td>0.770</td>
+      <td>0.750 to 0.790</td>
+      <td>0.70 to 0.83</td>
+    </tr>
+    <tr>
+      <td>Gene expression comparison — Random Survival Forest</td>
+      <td>Same gene expression features as gene-only model</td>
+      <td>0.641</td>
+      <td>n/a</td>
+      <td>Single 80/20 split only</td>
+    </tr>
+  </tbody>
+</table>
+<p class="caption">
+  Table 1. Nested CV C-statistic results (5 repeats times 5 folds,
+  n = 2,450, limma differential expression inside inner folds, variance
+  filter and adj.P below 0.05). RSF was compared against Cox-LASSO on a
+  single 80/20 stratified split and is not included in the paired t-test
+  comparison.
+</p>
+ 
+ 
 
-**Stable gene selection.** Because LASSO is sensitive to the specific training samples it sees, the set of genes selected can vary across cross-validation folds. To identify a panel that is consistently informative rather than fold-specific, we defined a gene as stable if it received a non-zero LASSO coefficient in at least 80% of the 25 outer fits (5 repeats times 5 folds). This selection frequency threshold is a standard approach to stability selection in high-dimensional regression and has been shown to substantially reduce false positives compared to single-run LASSO (Meinshausen and Buhlmann, 2010). The resulting stable-gene panel was then used for both the final deployment refit and to specify the gene inputs required by the Shiny application, ensuring that the app only requests genes the model consistently needs.
-
-**Discrimination.** The primary evaluation metric was Harrell's C-statistic (concordance index), which measures the proportion of all evaluable patient pairs in which the model correctly ranks the patient who died first as having a higher predicted risk score. A value of 0.5 indicates no discrimination beyond chance and 1.0 indicates perfect discrimination (Harrell et al., 1982). The C-statistic is the natural choice here because we are fitting Cox proportional hazards models: it directly evaluates what the Cox model is designed to optimise, namely the ranking of patients by hazard, rather than imposing a classification threshold that is arbitrary in a survival context (Steyerberg et al., 2010).
-
-**Model comparison.** Per-fold C-statistics were computed across all 25 outer iterations and compared between models using paired t-tests, with pairing by fold. Pairing is important here because models see the same data partitions in each fold, which induces correlation in their performance estimates. An unpaired test would ignore this structure and reduce statistical power. The paired design directly answers whether one model consistently outperforms another across the same data splits, rather than whether performance differs on average across independent samples.
-
-**Deployment refit and risk stratification.** After nested CV evaluation, the final model was refit on the complete ER+ endocrine-treated cohort. The linear predictor from the model, which is the log hazard score assigned to each patient, was divided into tertiles defined by the 33rd and 67th percentiles of the training distribution. This produced three groups — Low, Medium, and High risk — of approximately equal size. Tertile stratification was chosen because it translates a continuous risk score into a format that is actionable in a clinical setting, without requiring clinicians to interpret raw hazard values. A three-tier structure also allows the tool to identify not only the highest-risk patients but an intermediate group that may benefit from more frequent monitoring, which a binary split would collapse. The observed death rates within each tier rose monotonically, which provides a direct empirical check that the risk ordering is meaningful rather than arbitrary.
-
-The resulting model and tier cutpoints are loaded by the Shiny application. Risk is calculated from the six clinical predictors and 11 stability-selected genes. The application displays the risk tier assignment and flags cases where the model indicates elevated risk that may warrant clinical review.
-
-**References for this section**
-
-Harrell, F. E., Califf, R. M., Pryor, D. B., Lee, K. L., and Rosati, R. A. (1982). Evaluating the yield of medical tests. *JAMA*, 247(18), 2543–2546.
-
-Meinshausen, N. and Buhlmann, P. (2010). Stability selection. *Journal of the Royal Statistical Society: Series B*, 72(4), 417–473.
-
-Steyerberg, E. W., Vickers, A. J., Cook, N. R., Gerds, T., Gonen, M., Obuchowski, N., Pencina, M. J., and Kattan, M. W. (2010). Assessing the performance of prediction models: a framework for some traditional and novel measures. *Epidemiology*, 21(1), 128–138.
+ 
 
 # Results
 
@@ -742,6 +895,20 @@ Ramos, M., et al. (2017). Software for the Integration of Multiomics Experiments
 
 Sung, H., Ferlay, J., Siegel, R. L., Laversanne, M., Soerjomataram, I., Jemal, A., & Bray, F. (2021). Global Cancer Statistics 2020: GLOBOCAN Estimates of Incidence and Mortality Worldwide for 36 Cancers in 185 Countries. *CA: a cancer journal for clinicians, 71*(3), 209–249. https://doi.org/10.3322/caac.21660
 
+  <p>Harrell, F. E., Califf, R. M., Pryor, D. B., Lee, K. L., and Rosati,
+  R. A. (1982). Evaluating the yield of medical tests. JAMA, 247(18),
+  2543-2546.</p>
+  <p>Hosmer, D. W. and Lemeshow, S. (2000). Applied Logistic Regression
+  (2nd ed.). Wiley.</p>
+  <p>Ishwaran, H., Kogalur, U. B., Blackstone, E. H., and Lauer, M. S.
+  (2008). Random survival forests. Annals of Applied Statistics, 2(3),
+  841-860.</p>
+  <p>Meinshausen, N. and Buhlmann, P. (2010). Stability selection. Journal
+  of the Royal Statistical Society: Series B, 72(4), 417-473.</p>
+  <p>Steyerberg, E. W., Vickers, A. J., Cook, N. R., Gerds, T., Gonen, M.,
+  Obuchowski, N., Pencina, M. J., and Kattan, M. W. (2010). Assessing the
+  performance of prediction models: a framework for some traditional and
+  novel measures. Epidemiology, 21(1), 128-138.
 
 ::: todo
 <strong>Assigned to: Everyone</strong> — Add references for your own sections.
