@@ -487,7 +487,7 @@ pre code {
 # Executive Summary
 *Section author: Ananda Maheswari*
 
-**Background**<br>Histopathological and clinicopathological markers underpin breast cancer treatment decisions but may not fully capture tumour molecular heterogeneity. RNA-seq offers a means to identify patients whose molecular profiles diverge from routine histopathology, indicating potential under-treatment risk.
+**Background**<br>Histopathological and clinicopathological markers underpin breast cancer treatment decisions but may not fully capture tumour molecular heterogeneity. This motivates integrating RNA-seq gene expression with routine histopathology to refine risk stratification and support more informed prognostic assessment.
 
 **Methodology**<br>Using the SCAN-B GSE96058 cohort (n = 2,512 ER-positive, endocrine-treated patients), two Cox proportional hazards models were compared under nested cross-validation (5 repeats × 5 folds): a gene-expression-only LASSO-Cox model (Model 1) and a combined model incorporating both gene expression and histopathological variables (Model 2).
 
@@ -498,11 +498,11 @@ pre code {
 
 # Introduction
 
-Breast cancer is the most common malignancy among women worldwide and a major cause of cancer-related mortality, with more than two million new cases diagnosed annually (Sung et al., 2021). For early-stage disease, treatment decisions are typically guided by histopathological and clinicopathological indicators, including tumour grade, estrogen and progesterone receptor (ER/PgR) status, human epidermal growth factor receptor 2 (HER2) status, Ki67, tumour size, and nodal involvement. Although these markers are central to clinical practice, they do not fully capture the molecular heterogeneity of breast cancer, creating uncertainty about whether patients receive an optimal treatment pathway.
+Breast cancer is the most common malignancy among women worldwide and a major cause of cancer-related mortality, with more than two million new cases diagnosed annually (Sung et al., 2021). For early-stage disease, treatment decisions are typically guided by histopathological and clinicopathological indicators, including tumour grade, estrogen and progesterone receptor (ER/PgR) status, human epidermal growth factor receptor 2 (HER2) status, Ki67, tumour size, and nodal involvement. Although these markers are central to clinical practice, they do not fully capture the molecular heterogeneity of breast cancer, creating uncertainty about whether patients receive an optimal treatment pathway and whether their survival risk is adequately stratified using routine clinical information alone.
 
-RNA sequencing (RNA-seq) provides a complementary view of tumour biology by measuring genome-wide gene expression (Kukurba & Montgomery, 2015). Brueffer et al. (2018) showed that RNA-seq–based multigene classifiers can approach the inherent accuracy of conventional histopathology for biomarker assessment and offer improved prognostic stratification, particularly for hormone-responsive breast cancers. Nonetheless, a translational gap persists between detecting discordance and applying it to guide clinical decision-making.
+RNA sequencing (RNA-seq) provides a complementary view of tumour biology by measuring genome-wide gene expression (Kukurba & Montgomery, 2015). Brueffer et al. (2018) showed that RNA-seq–based multigene classifiers can approach the inherent accuracy of conventional histopathology for biomarker assessment and offer improved prognostic stratification, particularly for hormone-responsive breast cancers. Nonetheless, a translational gap persists between detecting molecular prognostic signals and translating them into an interpretable format that can support clinical risk assessment.
 
-To address this gap, this project therefore aims to develop a clinically interpretable risk-stratification framework that converts histopathology–RNA-seq discordance into low-, medium-, or high-risk tiers. Using the SCAN-B GSE96058 cohort, the study evaluates whether RNA-seq, integrated with routine histopathology, more effectively identifies patients whose treatment may warrant reassessment to reduce potential under-treatment.
+To address this gap, this project investigates whether integrating RNA-seq gene expression with routine histopathological data improves breast cancer risk stratification beyond either source alone. Using the SCAN-B GSE96058 cohort, this study focuses on ER-positive, endocrine-treated breast cancer, evaluating prognostic value and translating the model into an interpretable Shiny application that presents patient survival-based risk across clinically meaningful tiers.
 
 
 # Methodology
@@ -881,34 +881,30 @@ Future directions include external validation of the 11-gene Cox signature on TC
 
 # References
 
-Brueffer, C., Vallon-Christersson, J., Grabau, D., et al. (2018). Clinical Value of RNA Sequencing–Based Classifiers for Prediction of the Five Conventional Breast Cancer Biomarkers. *JCO Precision Oncology*, 2, 1–18.
+Brueffer, C., Vallon-Christersson, J., Grabau, D., et al. (2018). Clinical Value of RNA Sequencing–Based Classifiers for Prediction of the Five Conventional Breast Cancer Biomarkers. *JCO Precision Oncology, 2*, 1–18.
+
+Friedman, J., Hastie, T., & Tibshirani, R. (2010). Regularization Paths for Generalized Linear Models via Coordinate Descent. *Journal of Statistical Software, 33*(1), 1–22.
+
+Harrell, F. E., Jr, Califf, R. M., Pryor, D. B., Lee, K. L., & Rosati, R. A. (1982). Evaluating the yield of medical tests. *JAMA, 247*(18), 2543–2546.
+
+Hosmer, D. W. and Lemeshow, S. (2000). *Applied Logistic Regression* (2nd ed.). Wiley.
+
+Ishwaran, H., Kogalur, U. B., Blackstone, E. H., and Lauer, M. S. (2008). Random survival forests. *Annals of Applied Statistics, 2*(3), 841-860. https://doi.org/10.1214/08-AOAS169 
 
 Kukurba, K. R., & Montgomery, S. B. (2015). RNA Sequencing and Analysis. *Cold Spring Harbor protocols, 2015*(11), 951–969. https://doi.org/10.1101/pdb.top084970 
 
-Liaw, A., & Wiener, M. (2002). Classification and Regression by randomForest. *R News*, 2(3), 18–22.
+Liaw, A., & Wiener, M. (2002). Classification and Regression by randomForest. *R News, 2*(3), 18–22.
 
-Friedman, J., Hastie, T., & Tibshirani, R. (2010). Regularization Paths for Generalized Linear Models via Coordinate Descent. *Journal of Statistical Software*, 33(1), 1–22.
+Meinshausen, N. and Bühlmann, P. (2010), Stability selection. *Journal of the Royal Statistical Society: Series B (Statistical Methodology), 72*(4), 417-473. https://doi.org/10.1111/j.1467-9868.2010.00740.x
 
-Robin, X., et al. (2011). pROC: an open-source package for R and S+ to analyze and compare ROC curves. *BMC Bioinformatics*, 12, 77.
+Ramos, M., Schiffer, L., Re, A., Azhar, R., Basunia, A., Rodriguez, C., Chan, T., ... Waldron, L. (2017). Software for the Integration of Multiomics Experiments in Bioconductor. *Cancer research, 77*(21), e39–e42. https://doi.org/10.1158/0008-5472.CAN-17-0344
 
-Ramos, M., et al. (2017). Software for the Integration of Multiomics Experiments in Bioconductor. *Cancer Research*, 77(21), e39–e42.
+Robin, X., Turck, N., Hainard, A., Tiberti, N., Lisacek, F., Sanchez, J. C., & Müller, M. (2011). pROC: an open-source package for R and S+ to analyze and compare ROC curves. *BMC bioinformatics, 12*, 77. https://doi.org/10.1186/1471-2105-12-77
+
+Steyerberg, E. W., Vickers, A. J., Cook, N. R., Gerds, T., Gonen, M., Obuchowski, N., Pencina, M. J., & Kattan, M. W. (2010). Assessing the performance of prediction models: a framework for traditional and novel measures. *Epidemiology (Cambridge, Mass.), 21*(1), 128–138. https://doi.org/10.1097/EDE.0b013e3181c30fb2
 
 Sung, H., Ferlay, J., Siegel, R. L., Laversanne, M., Soerjomataram, I., Jemal, A., & Bray, F. (2021). Global Cancer Statistics 2020: GLOBOCAN Estimates of Incidence and Mortality Worldwide for 36 Cancers in 185 Countries. *CA: a cancer journal for clinicians, 71*(3), 209–249. https://doi.org/10.3322/caac.21660
 
-  <p>Harrell, F. E., Califf, R. M., Pryor, D. B., Lee, K. L., and Rosati,
-  R. A. (1982). Evaluating the yield of medical tests. JAMA, 247(18),
-  2543-2546.</p>
-  <p>Hosmer, D. W. and Lemeshow, S. (2000). Applied Logistic Regression
-  (2nd ed.). Wiley.</p>
-  <p>Ishwaran, H., Kogalur, U. B., Blackstone, E. H., and Lauer, M. S.
-  (2008). Random survival forests. Annals of Applied Statistics, 2(3),
-  841-860.</p>
-  <p>Meinshausen, N. and Buhlmann, P. (2010). Stability selection. Journal
-  of the Royal Statistical Society: Series B, 72(4), 417-473.</p>
-  <p>Steyerberg, E. W., Vickers, A. J., Cook, N. R., Gerds, T., Gonen, M.,
-  Obuchowski, N., Pencina, M. J., and Kattan, M. W. (2010). Assessing the
-  performance of prediction models: a framework for some traditional and
-  novel measures. Epidemiology, 21(1), 128-138.
 
 ::: todo
 <strong>Assigned to: Everyone</strong> — Add references for your own sections.
