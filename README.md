@@ -61,11 +61,3 @@ The model is trained on a single Swedish cohort of ER-positive patients and has 
 ## Tech
 
 R, R Markdown, `survival`, `glmnet` (Cox-LASSO), `randomForestSRC` (Random Survival Forest), stability selection, Shiny
-
-## Team
-
-DATA3888 Data Science Capstone (Biomed17), University of Sydney, 2026.
-
-Guanyu Chen, Serafina Aurelia, Kush Dewan, Thinh Duong, Ni Putu Ananda Maheswari, Nael Panjaitan
-
-**My contribution (Serafina Aurelia):** implemented the Cox-LASSO nested cross-validation, stability selection and the Shiny risk calculator, and produced the survival analysis results and the report's Results section.
